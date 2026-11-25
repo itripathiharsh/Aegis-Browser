@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "sources": [
     {
       "id": "easylist-adservers",
@@ -9,10 +9,10 @@
       "enabled": true
     },
     {
-      "id": "easyprivacy-trackers",
-      "name": "EasyPrivacy Tracking Servers (GitHub Mirror)",
+      "id": "uassets-privacy",
+      "name": "uBlock Origin Privacy Filters (GitHub Mirror)",
       "category": "trackers",
-      "url": "https://raw.githubusercontent.com/easylist/easylist/master/easyprivacy/easyprivacy_trackingservers.txt",
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt",
       "enabled": true
     },
     {

@@ -106,4 +106,27 @@ describe('FilterEngine (core-ui TS matcher)', () => {
     expect(selectors).toContain('.adsbygoogle');
     expect(selectors).toContain('#player-ads');
   });
+
+  it('skips non-blocking uBO modifier rules cleanly', () => {
+    const engine = new FilterEngine();
+    engine.compile([
+      {
+        category: 'trackers',
+        content: `
+          ||youtube.com^$removeparam=si
+          ||reddit.com^$csp=script-src 'none'
+          ||tracker.example.org^$3p
+        `,
+      },
+    ]);
+    expect(
+      engine.evaluate('https://www.youtube.com/watch?v=1', 'https://www.youtube.com/', DEFAULT_SHIELDS).blocked
+    ).toBe(false);
+    expect(
+      engine.evaluate('https://www.reddit.com/', 'https://www.reddit.com/', DEFAULT_SHIELDS).blocked
+    ).toBe(false);
+    expect(
+      engine.evaluate('https://tracker.example.org/p.js', 'https://news.example.com/', DEFAULT_SHIELDS).blocked
+    ).toBe(true);
+  });
 });

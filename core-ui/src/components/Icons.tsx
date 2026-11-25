@@ -16,8 +16,8 @@ export const AegisCrest: React.FC<IconProps> = ({ size = 44, className }) => (
   >
     <path
       d="M32 5L54 14V31C54 45.2 44.6 56.8 32 61C19.4 56.8 10 45.2 10 31V14L32 5Z"
-      fill="#18202B"
-      stroke="#303F52"
+      fill="#161C26"
+      stroke="rgba(255,255,255,0.14)"
       strokeWidth="2"
     />
     <path
@@ -26,29 +26,29 @@ export const AegisCrest: React.FC<IconProps> = ({ size = 44, className }) => (
     />
     <path
       d="M32 20L40.5 42H35.5L33.8 37.2H30.2L28.5 42H23.5L32 20ZM31.1 33.2H32.9L32 27.3L31.1 33.2Z"
-      fill="#090C10"
+      fill="#0B0E14"
     />
   </svg>
 );
 
-export const BackIcon: React.FC<IconProps> = ({ size = 18 }) => (
+export const BackIcon: React.FC<IconProps> = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path
       d="M15 18l-6-6 6-6"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
   </svg>
 );
 
-export const ForwardIcon: React.FC<IconProps> = ({ size = 18 }) => (
+export const ForwardIcon: React.FC<IconProps> = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path
       d="M9 18l6-6-6-6"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
@@ -72,7 +72,7 @@ export const StopIcon: React.FC<IconProps> = ({ size = 18 }) => (
     <path
       d="M18 6L6 18M6 6l12 12"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
     />
   </svg>
@@ -89,7 +89,7 @@ export const HomeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
+export const LockIcon: React.FC<IconProps> = ({ size = 15 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <rect
       x="5"
@@ -109,12 +109,19 @@ export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
+export const SearchIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+    <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
 export const ShieldIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path
       d="M12 2.5L20 6v6.2c0 5-3.4 9.1-8 10.3-4.6-1.2-8-5.3-8-10.3V6l8-3.5Z"
       fill="currentColor"
-      fillOpacity="0.18"
+      fillOpacity="0.2"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinejoin="round"
@@ -137,31 +144,29 @@ export const BookmarkIcon: React.FC<IconProps & { filled?: boolean }> = ({
   </svg>
 );
 
-export const TabsIcon: React.FC<IconProps> = ({ size = 18 }) => (
+export const MoreVertIcon: React.FC<IconProps> = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <rect
-      x="4"
-      y="6"
-      width="13"
-      height="13"
-      rx="2.5"
-      stroke="currentColor"
-      strokeWidth="2"
-    />
-    <path
-      d="M9 3h10a2 2 0 0 1 2 2v10"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-    />
+    <circle cx="12" cy="5.5" r="1.75" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.75" fill="currentColor" />
+    <circle cx="12" cy="18.5" r="1.75" fill="currentColor" />
+  </svg>
+);
+
+export const DesktopIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
+    <path d="M8 20h8M12 16v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
+export const PlusIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
   </svg>
 );
 
 export const PlayIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path
-      d="M7 5l12 7-12 7V5Z"
-      fill="currentColor"
-    />
+    <path d="M7 5l12 7-12 7V5Z" fill="currentColor" />
   </svg>
 );

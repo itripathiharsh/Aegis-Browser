@@ -59,16 +59,25 @@ class FilterListUpdater(
         }.getOrDefault(emptyList())
     }
 
+    suspend fun syncIfStale(maxAgeMs: Long = 24L * 3600_000L): FilterSyncResult? {
+        val lastCheckMs = prefs.getLong("last_sync_attempt_ms", 0L)
+        if (System.currentTimeMillis() - lastCheckMs < maxAgeMs) {
+            return null
+        }
+        return syncEnabledLists()
+    }
+
     suspend fun syncEnabledLists(): FilterSyncResult = withContext(Dispatchers.IO) {
         val sources = loadSources().filter { it.enabled }
         val cacheDir = File(context.filesDir, "filters").apply { mkdirs() }
         var synced = 0
         var failed = 0
         val nowIso = currentIsoUtc()
+        prefs.edit().putLong("last_sync_attempt_ms", System.currentTimeMillis()).apply()
 
         for (source in sources) {
             val ok = runCatching {
-                val content = downloadTextGuarded(source.url, maxBytes = 8 * 1024 * 1024)
+                val content = downloadTextGuarded(source.url, maxBytes = 12 * 1024 * 1024)
                 if (!looksLikeFilterList(content)) {
                     throw IllegalStateException("Response is not a valid filter list")
                 }

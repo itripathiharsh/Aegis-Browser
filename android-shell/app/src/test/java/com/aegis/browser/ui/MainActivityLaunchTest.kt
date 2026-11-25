@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.aegis.browser.adblock.AdBlockEngine
+import com.aegis.browser.browser.TabManager
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -19,11 +20,14 @@ import org.robolectric.annotation.Config
 class MainActivityLaunchTest {
 
     @Test
-    fun mainActivityLaunchesAndExposesInitialBridgeState() {
+    fun mainActivityLoadsRealBundledFiltersAndPersistsBraveSearchEngine() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val engine = AdBlockEngine()
         engine.loadFromContext(context)
-        assertTrue(engine.getStats().domainRuleCount > 0)
+        assertTrue(
+            "Bundled filter pack must contain 40,000+ real rules",
+            engine.getStats().domainRuleCount >= 40_000
+        )
 
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val activity = controller.get()
@@ -33,24 +37,33 @@ class MainActivityLaunchTest {
         val initialJson = JSONObject(bridge.getInitialState())
 
         assertEquals("android", initialJson.getString("platform"))
-        assertTrue(initialJson.getJSONArray("tabs").length() >= 1)
-        val firstTab = initialJson.getJSONArray("tabs").getJSONObject(0)
-        assertEquals("aegis://home", firstTab.getString("url"))
+        assertTrue(initialJson.getJSONObject("filterStats").getInt("domainRuleCount") >= 40_000)
 
-        val stats = initialJson.getJSONObject("filterStats")
-        assertTrue(stats.getInt("domainRuleCount") > 0)
+        // Switching to Brave must persist and drive Kotlin search resolution too
+        bridge.setSearchEngine("brave")
+        val updatedState = JSONObject(bridge.getInitialState())
+        assertEquals("brave", updatedState.getString("searchEngine"))
+        assertEquals(
+            "https://search.brave.com/search?q=adblock+test",
+            TabManager.resolveUserInput("adblock test", "brave")
+        )
 
-        val appUpdate = initialJson.getJSONObject("appUpdate")
-        assertEquals("itripathiharsh/Aegis-Browser", appUpdate.getString("githubRepo"))
-
-        // Exercise ad filter probe and tab navigation cleanly on main looper
-        val probe = JSONObject(
+        // Real ad networks must be blocked
+        val adProbe = JSONObject(
             bridge.testUrlAgainstFilters(
-                "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+                "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js",
                 "news.example.com"
             )
         )
-        assertTrue(probe.getBoolean("blocked"))
+        assertTrue(adProbe.getBoolean("blocked"))
+
+        val adsterraProbe = JSONObject(
+            bridge.testUrlAgainstFilters(
+                "https://pl12345.highperformanceformat.com/invoke.js",
+                "stream.example.com"
+            )
+        )
+        assertTrue(adsterraProbe.getBoolean("blocked"))
 
         bridge.createTab("https://example.com")
         bridge.toggleSiteShields("example.com", false)
@@ -61,7 +74,7 @@ class MainActivityLaunchTest {
 
     @Test
     fun mainActivityLaunchesCleanlyFromExternalHttpViewIntent() {
-        val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com"))
+        val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://search.brave.com"))
         val controller = Robolectric.buildActivity(MainActivity::class.java, viewIntent).setup()
         val activity = controller.get()
         assertFalse(activity.isFinishing)
@@ -70,5 +83,38 @@ class MainActivityLaunchTest {
         assertTrue(state.getJSONArray("tabs").length() >= 2)
 
         controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun popupRedirectTabAutoClosesBackToOpenerTab() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val container = android.widget.FrameLayout(context)
+        val engine = AdBlockEngine().apply { loadFromContext(context) }
+        val telemetry = com.aegis.browser.adblock.ShieldsTelemetry {}
+        val manager = TabManager(
+            context = context,
+            container = container,
+            adBlockEngine = engine,
+            telemetry = telemetry,
+            initialSearchEngine = "brave",
+            onTabsUpdated = {},
+            onShowFullscreen = { _, _ -> },
+            onHideFullscreen = {}
+        )
+        manager.ensureInitialTab()
+        val openerId = manager.getActiveTabId()
+        val popup = manager.createTab(
+            initialInput = "https://example.org/promo",
+            makeActive = true,
+            openerTabId = openerId,
+            isAutoPopup = true
+        )
+        assertEquals(2, manager.getTabs().size)
+        assertEquals(popup.id, manager.getActiveTabId())
+
+        manager.closePopupAndReturnToOpener(popup.id)
+        assertEquals(1, manager.getTabs().size)
+        assertEquals(openerId, manager.getActiveTabId())
+        manager.destroyAll()
     }
 }

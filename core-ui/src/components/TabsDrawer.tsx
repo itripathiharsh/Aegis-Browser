@@ -49,22 +49,19 @@ export const TabsDrawer: React.FC<TabsDrawerProps> = ({
 
         {activeTab && !activeTab.url.startsWith('aegis://') && (
           <div className="panel-card">
-            <div className="toggle-row">
-              <div>
-                <div className="row-title">Desktop Site User-Agent</div>
-                <div className="row-meta">
-                  Switch active tab between Mobile &amp; Desktop layout
+              <div className="toggle-row">
+                <div>
+                  <div className="row-title">Desktop Site</div>
+                  <div className="row-meta">Request desktop pages</div>
                 </div>
+                <button
+                  type="button"
+                  className="toggle-switch"
+                  aria-label="Toggle Desktop Site"
+                  aria-pressed={activeTab.desktopMode}
+                  onClick={() => onToggleDesktopMode(activeTab)}
+                />
               </div>
-              <button
-                type="button"
-                className="toggle-btn"
-                aria-pressed={activeTab.desktopMode}
-                onClick={() => onToggleDesktopMode(activeTab)}
-              >
-                {activeTab.desktopMode ? 'ON' : 'OFF'}
-              </button>
-            </div>
           </div>
         )}
 

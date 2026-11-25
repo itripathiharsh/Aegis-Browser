@@ -22,6 +22,7 @@ import { isWebOSRuntime, type WebOSNativeHost } from './webosAdapter';
 interface AndroidNativeHost extends WebOSNativeHost {
   setOverlayExpanded(expanded: boolean, barHeightPx: number): void;
   focusContent(): void;
+  setSearchEngine?(engineId: string): void;
   checkForUpdates(manual: boolean): void;
   downloadAndInstallUpdate(): void;
   cancelUpdateDownload(): void;
@@ -59,6 +60,7 @@ export interface BrowserBridge {
   testUrl(url: string, pageHost: string): BlockDecision;
   setOverlayExpanded(expanded: boolean, barHeightPx: number): void;
   focusContent(): void;
+  setSearchEngine(engineId: SearchEngineId): void;
   checkForUpdates(manual: boolean): void;
   downloadAndInstallUpdate(): void;
   cancelUpdateDownload(): void;
@@ -201,6 +203,12 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   focusContent(): void {
     if ('focusContent' in this.host) {
       this.host.focusContent();
+    }
+  }
+
+  setSearchEngine(engineId: SearchEngineId): void {
+    if ('setSearchEngine' in this.host && typeof this.host.setSearchEngine === 'function') {
+      this.host.setSearchEngine(engineId);
     }
   }
 
@@ -456,6 +464,11 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   setOverlayExpanded(_expanded: boolean, _barHeightPx: number): void {}
   focusContent(): void {}
+
+  setSearchEngine(engineId: SearchEngineId): void {
+    this.state = { ...this.state, searchEngine: engineId };
+    this.emit();
+  }
 
   checkForUpdates(manual: boolean): void {
     void this.runPreviewUpdateCheck(manual);

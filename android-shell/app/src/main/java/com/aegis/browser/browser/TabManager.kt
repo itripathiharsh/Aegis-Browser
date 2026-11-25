@@ -25,6 +25,9 @@ data class TabSession(
     @Volatile var canGoBack: Boolean = false,
     @Volatile var canGoForward: Boolean = false,
     @Volatile var desktopMode: Boolean = false,
+    val openerTabId: String? = null,
+    @Volatile var isAutoPopup: Boolean = false,
+    val openedAtMs: Long = 0L,
     var webView: WebView? = null,
     var webViewClient: BrowserWebViewClient? = null
 ) {
@@ -37,6 +40,7 @@ class TabManager(
     private val container: FrameLayout,
     private val adBlockEngine: AdBlockEngine,
     private val telemetry: ShieldsTelemetry,
+    initialSearchEngine: String = "duckduckgo",
     private val onTabsUpdated: () -> Unit,
     private val onShowFullscreen: (View, WebChromeClient.CustomViewCallback) -> Unit,
     private val onHideFullscreen: () -> Unit
@@ -47,10 +51,15 @@ class TabManager(
     @Volatile
     private var activeTabId: String = ""
 
-    /**
-     * Separated from constructor init so MainActivity's `tabManager` reference and NativeBridge
-     * are fully assigned before `onTabsUpdated` callbacks fire.
-     */
+    @Volatile
+    private var searchEngine: String = normalizeEngine(initialSearchEngine)
+
+    fun setSearchEngine(engineId: String) {
+        searchEngine = normalizeEngine(engineId)
+    }
+
+    fun getSearchEngine(): String = searchEngine
+
     fun ensureInitialTab() {
         val isEmpty = synchronized(tabsLock) { tabs.isEmpty() }
         if (isEmpty) {
@@ -66,11 +75,27 @@ class TabManager(
 
     fun getActiveTabId(): String = activeTabId
 
-    fun createTab(initialInput: String? = null, makeActive: Boolean = true): TabSession {
+    fun createTab(
+        initialInput: String? = null,
+        makeActive: Boolean = true,
+        openerTabId: String? = null,
+        isAutoPopup: Boolean = false
+    ): TabSession {
         val id = "tab-" + UUID.randomUUID().toString().take(8)
-        val resolved = if (initialInput.isNullOrBlank()) "aegis://home" else resolveUserInput(initialInput)
+        val resolved = if (initialInput.isNullOrBlank()) {
+            "aegis://home"
+        } else {
+            resolveUserInput(initialInput, searchEngine)
+        }
         val title = if (resolved == "aegis://home") "Aegis Start" else resolved
-        val session = TabSession(id = id, title = title, url = resolved)
+        val session = TabSession(
+            id = id,
+            title = title,
+            url = resolved,
+            openerTabId = openerTabId,
+            isAutoPopup = isAutoPopup,
+            openedAtMs = if (isAutoPopup) System.currentTimeMillis() else 0L
+        )
         synchronized(tabsLock) {
             tabs.add(session)
         }
@@ -104,6 +129,20 @@ class TabManager(
         onTabsUpdated()
     }
 
+    fun closePopupAndReturnToOpener(popupTabId: String) {
+        val openerId: String?
+        val exists: Boolean
+        synchronized(tabsLock) {
+            val target = tabs.find { it.id == popupTabId } ?: return
+            openerId = target.openerTabId
+            exists = openerId != null && tabs.any { it.id == openerId }
+        }
+        closeTab(popupTabId)
+        if (exists && openerId != null) {
+            switchTab(openerId)
+        }
+    }
+
     fun closeTab(tabId: String) {
         val removed: TabSession
         val nextActiveId: String?
@@ -114,7 +153,12 @@ class TabManager(
             nextActiveId = if (tabs.isEmpty()) {
                 null
             } else if (activeTabId == tabId) {
-                tabs[idx.coerceAtMost(tabs.lastIndex)].id
+                val openerId = removed.openerTabId
+                if (openerId != null && tabs.any { it.id == openerId }) {
+                    openerId
+                } else {
+                    tabs[idx.coerceAtMost(tabs.lastIndex)].id
+                }
             } else {
                 activeTabId
             }
@@ -141,7 +185,8 @@ class TabManager(
 
     fun navigate(tabId: String, rawInput: String) {
         val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
-        val resolved = resolveUserInput(rawInput)
+        val resolved = resolveUserInput(rawInput, searchEngine)
+        tab.isAutoPopup = false
         tab.url = resolved
         if (resolved.startsWith("aegis://")) {
             tab.isLoading = false
@@ -163,6 +208,10 @@ class TabManager(
             return true
         }
         if (!tab.isInternalPage) {
+            if (tab.openerTabId != null) {
+                closePopupAndReturnToOpener(tab.id)
+                return true
+            }
             navigate(tab.id, "aegis://home")
             return true
         }
@@ -171,11 +220,13 @@ class TabManager(
 
     fun goForward(tabId: String) {
         val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
+        tab.isAutoPopup = false
         tab.webView?.takeIf { it.canGoForward() }?.goForward()
     }
 
     fun reload(tabId: String) {
         val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
+        tab.isAutoPopup = false
         if (!tab.isInternalPage) {
             tab.webView?.reload()
         }
@@ -264,7 +315,6 @@ class TabManager(
         val settings = wv.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
-        settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.setSupportMultipleWindows(true)
         settings.javaScriptCanOpenWindowsAutomatically = false
@@ -273,7 +323,6 @@ class TabManager(
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        // Strict isolation: untrusted content WebViews never access local files or content URIs
         settings.allowFileAccess = false
         settings.allowContentAccess = false
         applyUserAgent(settings, tab.desktopMode)
@@ -283,15 +332,24 @@ class TabManager(
         val client = BrowserWebViewClient(
             tabId = tab.id,
             adBlockEngine = adBlockEngine,
-            telemetry = telemetry
-        ) { id, updatedUrl, loading, canBack, canForward ->
-            val target = synchronized(tabsLock) { tabs.find { it.id == id } } ?: return@BrowserWebViewClient
-            if (updatedUrl.isNotBlank()) target.url = updatedUrl
-            target.isLoading = loading
-            target.canGoBack = canBack
-            target.canGoForward = canForward
-            onTabsUpdated()
-        }
+            telemetry = telemetry,
+            isAutoPopupTab = {
+                val target = synchronized(tabsLock) { tabs.find { it.id == tab.id } }
+                target != null && target.isAutoPopup &&
+                    (System.currentTimeMillis() - target.openedAtMs) < 15_000L
+            },
+            onAutoClosePopupTab = { id, _, _ ->
+                wv.post { closePopupAndReturnToOpener(id) }
+            },
+            onStateChanged = { id, updatedUrl, loading, canBack, canForward ->
+                val target = synchronized(tabsLock) { tabs.find { it.id == id } } ?: return@BrowserWebViewClient
+                if (updatedUrl.isNotBlank()) target.url = updatedUrl
+                target.isLoading = loading
+                target.canGoBack = canBack
+                target.canGoForward = canForward
+                onTabsUpdated()
+            }
+        )
         tab.webViewClient = client
         wv.webViewClient = client
 
@@ -314,8 +372,16 @@ class TabManager(
                     onTabsUpdated()
                 }
             },
-            onOpenNewTabCb = { newUrl ->
-                createTab(newUrl, makeActive = true)
+            onOpenNewPopupTabCb = { newUrl, openerId ->
+                createTab(
+                    initialInput = newUrl,
+                    makeActive = true,
+                    openerTabId = openerId,
+                    isAutoPopup = true
+                )
+            },
+            onCloseTabCb = { id ->
+                closePopupAndReturnToOpener(id)
             },
             onShowFullscreenCb = onShowFullscreen,
             onHideFullscreenCb = onHideFullscreen
@@ -336,7 +402,19 @@ class TabManager(
     }
 
     companion object {
-        fun resolveUserInput(raw: String): String {
+        private val ENGINE_TEMPLATES = mapOf(
+            "brave" to "https://search.brave.com/search?q=",
+            "duckduckgo" to "https://duckduckgo.com/?q=",
+            "startpage" to "https://www.startpage.com/do/search?q=",
+            "google" to "https://www.google.com/search?q="
+        )
+
+        fun normalizeEngine(raw: String?): String {
+            val clean = raw?.trim()?.lowercase().orEmpty()
+            return if (clean in ENGINE_TEMPLATES) clean else "duckduckgo"
+        }
+
+        fun resolveUserInput(raw: String, engineId: String = "duckduckgo"): String {
             val trimmed = raw.trim()
             if (trimmed.isEmpty()) return "aegis://home"
             if (trimmed.startsWith("aegis://")) return trimmed
@@ -350,11 +428,10 @@ class TabManager(
                 }
             }
 
-            // Domain / IP heuristic
             val looksLikeHost = !trimmed.contains(' ') &&
-                (trimmed.contains('.') || trimmed.startsWith("localhost"))
+                (trimmed.contains('.') || lower == "localhost" || lower.startsWith("localhost:"))
             if (looksLikeHost) {
-                val url = "https://$trimmed"
+                val url = if (lower.startsWith("localhost")) "http://$trimmed" else "https://$trimmed"
                 return if (isDirectStreamUrl(url.lowercase())) {
                     "aegis://player?src=" + Uri.encode(url)
                 } else {
@@ -362,8 +439,9 @@ class TabManager(
                 }
             }
 
+            val template = ENGINE_TEMPLATES[normalizeEngine(engineId)] ?: ENGINE_TEMPLATES.getValue("duckduckgo")
             val encoded = URLEncoder.encode(trimmed, "UTF-8")
-            return "https://duckduckgo.com/?q=$encoded"
+            return "$template$encoded"
         }
 
         private fun isDirectStreamUrl(lowerUrl: String): Boolean {

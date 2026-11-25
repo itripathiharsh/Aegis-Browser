@@ -17,17 +17,10 @@ import { TopBar } from './components/TopBar';
 import { UpdateModal } from './components/UpdateModal';
 import { useDpadNavigation } from './hooks/useDpadNavigation';
 
-const BOOKMARKS_STORAGE_KEY = 'aegis_bookmarks_v1';
+const BOOKMARKS_STORAGE_KEY = 'aegis_bookmarks_v2';
 const ENGINE_STORAGE_KEY = 'aegis_search_engine_v1';
 
 const DEFAULT_BOOKMARKS: BookmarkItem[] = [
-  {
-    id: 'bm-ddg',
-    title: 'DuckDuckGo',
-    url: 'https://duckduckgo.com',
-    tag: 'Private Search',
-    pinned: true,
-  },
   {
     id: 'bm-yt',
     title: 'YouTube',
@@ -39,28 +32,35 @@ const DEFAULT_BOOKMARKS: BookmarkItem[] = [
     id: 'bm-wiki',
     title: 'Wikipedia',
     url: 'https://en.wikipedia.org',
-    tag: 'Knowledge',
+    tag: 'Wiki',
+    pinned: true,
+  },
+  {
+    id: 'bm-github',
+    title: 'GitHub',
+    url: 'https://github.com',
+    tag: 'Code',
+    pinned: true,
+  },
+  {
+    id: 'bm-reddit',
+    title: 'Reddit',
+    url: 'https://www.reddit.com',
+    tag: 'Social',
+    pinned: true,
+  },
+  {
+    id: 'bm-bbc',
+    title: 'BBC News',
+    url: 'https://www.bbc.com',
+    tag: 'News',
     pinned: true,
   },
   {
     id: 'bm-hls',
-    title: 'Big Buck Bunny HLS',
-    url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-    tag: 'HLS 1080p',
-    pinned: true,
-  },
-  {
-    id: 'bm-adtest',
-    title: 'AdBlock Tester',
-    url: 'https://adblock-tester.com',
-    tag: 'Verify Shields',
-    pinned: true,
-  },
-  {
-    id: 'bm-coveryourtracks',
-    title: 'EFF Cover Your Tracks',
-    url: 'https://coveryourtracks.eff.org',
-    tag: 'Privacy Audit',
+    title: 'Stream Player',
+    url: 'aegis://player',
+    tag: 'Video',
     pinned: true,
   },
 ];
@@ -76,7 +76,7 @@ function loadBookmarks(): BookmarkItem[] {
   }
 }
 
-function loadSearchEngine(): SearchEngineId {
+function loadFallbackSearchEngine(): SearchEngineId {
   try {
     const raw = localStorage.getItem(ENGINE_STORAGE_KEY) as SearchEngineId | null;
     return raw ?? 'duckduckgo';
@@ -89,18 +89,28 @@ export const App: React.FC = () => {
   const bridge = useMemo(() => getBrowserBridge(), []);
   const [state, setState] = useState<BrowserState>(() => bridge.getState());
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(loadBookmarks);
-  const [searchEngine, setSearchEngine] = useState<SearchEngineId>(loadSearchEngine);
+  const [localEngine, setLocalEngine] = useState<SearchEngineId>(
+    () => bridge.getState().searchEngine ?? loadFallbackSearchEngine()
+  );
   const [activeDrawer, setActiveDrawer] = useState<
     'tabs' | 'bookmarks' | 'shields' | null
   >(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<FilterSyncResult | null>(null);
 
-  const barRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const omniboxInputRef = useRef<HTMLInputElement>(null);
 
+  const searchEngine: SearchEngineId = state.searchEngine ?? localEngine;
+
   useEffect(() => {
-    const unsubState = bridge.subscribe(setState);
+    const unsubState = bridge.subscribe((next) => {
+      setState(next);
+      if (next.searchEngine) {
+        setLocalEngine(next.searchEngine);
+      }
+    });
     const unsubSync = bridge.onSyncResult((res) => {
       setIsSyncing(false);
       setSyncStatus(res);
@@ -115,13 +125,16 @@ export const App: React.FC = () => {
     state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
 
   const isInternalPage = activeTab.url.startsWith('aegis://');
-  const overlayExpanded = activeDrawer !== null || isInternalPage;
+  const overlayExpanded =
+    activeDrawer !== null ||
+    menuOpen ||
+    isInternalPage ||
+    state.appUpdate.popupVisible;
 
-  // Report exact chrome bar height in physical pixels to native Android layout
   useEffect(() => {
     const reportSize = () => {
       const barEl = barRef.current;
-      const cssHeight = barEl ? barEl.getBoundingClientRect().height : 64;
+      const cssHeight = barEl ? barEl.getBoundingClientRect().height : 56;
       const physicalPx = Math.ceil(cssHeight * (window.devicePixelRatio || 1));
       bridge.setOverlayExpanded(overlayExpanded, physicalPx);
     };
@@ -134,29 +147,34 @@ export const App: React.FC = () => {
     return () => ro?.disconnect();
   }, [bridge, overlayExpanded, activeTab.isLoading]);
 
-  // Expose native Android & webOS remote triggers
   useEffect(() => {
-    window.__AEGIS_CLOSE_OVERLAY__ = () => setActiveDrawer(null);
+    window.__AEGIS_CLOSE_OVERLAY__ = () => {
+      setMenuOpen(false);
+      setActiveDrawer(null);
+    };
     window.__AEGIS_FOCUS_OMNIBOX__ = () => {
       omniboxInputRef.current?.focus();
       omniboxInputRef.current?.select();
     };
     const unsubWebOS = registerWebOSBackHandler(() => {
-      if (activeDrawer !== null) setActiveDrawer(null);
+      if (menuOpen) setMenuOpen(false);
+      else if (activeDrawer !== null) setActiveDrawer(null);
       else bridge.goBack(activeTab.id);
     });
     return () => unsubWebOS();
-  }, [activeDrawer, activeTab.id, bridge]);
+  }, [activeDrawer, activeTab.id, bridge, menuOpen]);
 
   const handleBackKey = useCallback(() => {
     if (state.appUpdate.popupVisible) {
       bridge.dismissUpdateModal();
+    } else if (menuOpen) {
+      setMenuOpen(false);
     } else if (activeDrawer !== null) {
       setActiveDrawer(null);
     } else if (!isInternalPage) {
       bridge.goBack(activeTab.id);
     }
-  }, [activeDrawer, activeTab.id, bridge, isInternalPage, state.appUpdate.popupVisible]);
+  }, [activeDrawer, activeTab.id, bridge, isInternalPage, menuOpen, state.appUpdate.popupVisible]);
 
   useDpadNavigation({
     onBack: handleBackKey,
@@ -173,12 +191,13 @@ export const App: React.FC = () => {
   };
 
   const handleChangeEngine = (engine: SearchEngineId) => {
-    setSearchEngine(engine);
+    setLocalEngine(engine);
     try {
       localStorage.setItem(ENGINE_STORAGE_KEY, engine);
     } catch {
       // Ignore
     }
+    bridge.setSearchEngine(engine);
   };
 
   const currentHost = extractHost(activeTab.url);
@@ -215,8 +234,10 @@ export const App: React.FC = () => {
         isBookmarked={isBookmarked}
         searchEngine={searchEngine}
         activeDrawer={activeDrawer}
+        menuOpen={menuOpen}
         omniboxInputRef={omniboxInputRef}
         barRef={barRef}
+        onToggleMenu={setMenuOpen}
         onNavigate={(raw) => bridge.navigate(activeTab.id, raw, searchEngine)}
         onBack={() => bridge.goBack(activeTab.id)}
         onForward={() => bridge.goForward(activeTab.id)}
@@ -227,6 +248,10 @@ export const App: React.FC = () => {
         }
         onGoHome={() => bridge.navigate(activeTab.id, 'aegis://home', searchEngine)}
         onToggleBookmark={handleToggleCurrentBookmark}
+        onToggleDesktopMode={() =>
+          bridge.setDesktopMode(activeTab.id, !activeTab.desktopMode)
+        }
+        onCheckUpdates={() => bridge.checkForUpdates(true)}
         onOpenDrawer={(d) => setActiveDrawer((cur) => (cur === d ? null : d))}
       />
 
@@ -238,6 +263,7 @@ export const App: React.FC = () => {
           onChangeEngine={handleChangeEngine}
           onOpenUrl={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
           onOpenShields={() => setActiveDrawer('shields')}
+          onOpenBookmarks={() => setActiveDrawer('bookmarks')}
         />
       )}
 
@@ -253,29 +279,31 @@ export const App: React.FC = () => {
         <main className="main-stage" id="main">
           <div className="preview-card">
             <h1 className="section-title">
-              Web Preview Viewport — {activeTab.title}
+              Web Viewport — {activeTab.title}
             </h1>
             <p className="row-meta">{activeTab.url}</p>
             <p className="stat-label">
-              In the compiled Android APK (Phase 1) and LG webOS IPK (Phase 2),
-              this viewport renders inside the native hardware-accelerated WebView
-              with full shouldInterceptRequest network blocking and fullscreen HLS
-              video playback.
+              Renders inside the hardware-accelerated Android WebView with{' '}
+              {(
+                state.filterStats.domainRuleCount +
+                state.filterStats.patternRuleCount
+              ).toLocaleString()}{' '}
+              active ad-block rules.
             </p>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className="primary-btn"
                 onClick={() => setActiveDrawer('shields')}
               >
-                Inspect {state.telemetry.totalBlocked} Blocked Requests
+                Shields ({state.telemetry.totalBlocked} blocked)
               </button>
               <button
                 type="button"
                 className="secondary-btn"
                 onClick={() => bridge.navigate(activeTab.id, 'aegis://home')}
               >
-                Back to Start Page
+                Home
               </button>
             </div>
           </div>

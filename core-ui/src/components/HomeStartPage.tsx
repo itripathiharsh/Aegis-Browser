@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type {
   BookmarkItem,
   BrowserState,
   SearchEngineId,
 } from '../adblock/types';
 import { SEARCH_ENGINES } from '../utils/urlResolver';
-import { AegisCrest, PlayIcon, ShieldIcon } from './Icons';
+import { AegisCrest, PlusIcon, SearchIcon } from './Icons';
 
 interface HomeStartPageProps {
   state: BrowserState;
@@ -14,6 +14,7 @@ interface HomeStartPageProps {
   onChangeEngine: (engine: SearchEngineId) => void;
   onOpenUrl: (url: string) => void;
   onOpenShields: () => void;
+  onOpenBookmarks: () => void;
 }
 
 export const HomeStartPage: React.FC<HomeStartPageProps> = ({
@@ -23,70 +24,67 @@ export const HomeStartPage: React.FC<HomeStartPageProps> = ({
   onChangeEngine,
   onOpenUrl,
   onOpenShields,
+  onOpenBookmarks,
 }) => {
+  const [query, setQuery] = useState('');
   const activeRules =
     state.filterStats.domainRuleCount + state.filterStats.patternRuleCount;
+  const engineLabel = SEARCH_ENGINES[searchEngine]?.label ?? 'Brave Search';
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+    onOpenUrl(query.trim());
+  };
 
   return (
     <main className="main-stage" id="main">
       <div className="home-container">
-        <section className="hero-deck" aria-labelledby="aegis-home-title">
-          <div className="hero-brand">
-            <AegisCrest size={56} />
-            <div>
-              <h1 id="aegis-home-title" className="hero-title">
-                Aegis Privacy Browser
-              </h1>
-              <p className="hero-subtitle">
-                Zero-bloat network ad blocker, pop-under shield, and hardware-accelerated HLS playback.
-              </p>
-            </div>
+        <section className="home-hero" aria-labelledby="aegis-home-title">
+          <div className="home-brand-row">
+            <AegisCrest size={48} />
+            <h1 id="aegis-home-title" className="home-title">
+              Aegis
+            </h1>
           </div>
 
-          <div className="telemetry-strip" aria-label="Privacy protection telemetry">
-            <div className="stat-tile">
-              <span className="stat-value" data-tone="accent">
-                {state.telemetry.totalBlocked.toLocaleString()}
-              </span>
-              <span className="stat-label">Blocked this session</span>
-            </div>
+          <button
+            type="button"
+            className="home-shield-pill"
+            onClick={onOpenShields}
+          >
+            <span
+              className="home-shield-dot"
+              data-active={state.shields.enabled ? 'true' : 'false'}
+            />
+            <span>
+              <strong>{state.telemetry.totalBlocked.toLocaleString()}</strong> blocked ·{' '}
+              {activeRules.toLocaleString()} rules active
+            </span>
+          </button>
 
-            <div className="stat-tile">
-              <span className="stat-value" data-tone="success">
-                {activeRules.toLocaleString()}
-              </span>
-              <span className="stat-label">Active filter rules</span>
-            </div>
-
-            <div className="stat-tile">
-              <span className="stat-value" data-tone="info">
-                {state.filterStats.cosmeticSelectorCount.toLocaleString()}
-              </span>
-              <span className="stat-label">Cosmetic CSS rules</span>
-            </div>
-
-            <button
-              type="button"
-              className="stat-tile"
-              onClick={onOpenShields}
-              style={{ textAlign: 'left' }}
-            >
-              <span
-                className="stat-value"
-                data-tone={state.shields.enabled ? 'success' : 'accent'}
-              >
-                {state.shields.enabled ? 'ACTIVE' : 'PAUSED'}
-              </span>
-              <span className="stat-label">
-                <ShieldIcon size={13} /> Inspect Shields &amp; Mirrors
-              </span>
+          <form className="home-search-box" onSubmit={handleSearch} role="search">
+            <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>
+              <SearchIcon size={18} />
+            </span>
+            <label htmlFor="home-search-input" className="sr-only">
+              Search with {engineLabel} or enter website URL
+            </label>
+            <input
+              id="home-search-input"
+              className="home-search-input"
+              type="text"
+              enterKeyHint="search"
+              placeholder={`Search with ${engineLabel} or enter URL`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button type="submit" className="home-search-submit">
+              Search
             </button>
-          </div>
-        </section>
+          </form>
 
-        <section aria-label="Default search engine">
-          <div className="engine-strip">
-            <span className="stat-label">Search Engine:</span>
+          <div className="engine-strip" role="group" aria-label="Search engine">
             {(Object.keys(SEARCH_ENGINES) as SearchEngineId[]).map((id) => (
               <button
                 key={id}
@@ -102,37 +100,38 @@ export const HomeStartPage: React.FC<HomeStartPageProps> = ({
         </section>
 
         <section aria-labelledby="speed-dial-heading">
-          <div className="section-head">
+          <div className="section-head" style={{ marginBottom: '10px' }}>
             <h2 id="speed-dial-heading" className="section-title">
-              Speed Dial &amp; Verification Targets
+              Favorites
             </h2>
             <button
               type="button"
               className="secondary-btn"
-              onClick={() =>
-                onOpenUrl('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')
-              }
+              onClick={onOpenBookmarks}
             >
-              <PlayIcon size={15} />
-              Test HLS Stream
+              <PlusIcon size={14} />
+              Edit
             </button>
           </div>
 
-          <div className="dial-grid" style={{ marginTop: '0.75rem' }}>
-            {bookmarks.map((bm) => (
-              <button
-                key={bm.id}
-                type="button"
-                className="dial-card"
-                onClick={() => onOpenUrl(bm.url)}
-              >
-                <div className="dial-card-top">
+          <div className="dial-grid">
+            {bookmarks.map((bm, idx) => {
+              const initial = (bm.title.trim()[0] ?? 'A').toUpperCase();
+              return (
+                <button
+                  key={bm.id}
+                  type="button"
+                  className="dial-tile"
+                  data-accent={idx === 0 ? 'true' : 'false'}
+                  onClick={() => onOpenUrl(bm.url)}
+                >
+                  <span className="dial-icon" aria-hidden="true">
+                    {initial}
+                  </span>
                   <span className="dial-title">{bm.title}</span>
-                  <span className="dial-tag">{bm.tag}</span>
-                </div>
-                <span className="dial-url">{bm.url}</span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>

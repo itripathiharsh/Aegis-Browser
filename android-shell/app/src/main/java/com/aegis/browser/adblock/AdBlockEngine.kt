@@ -9,14 +9,15 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * High-speed, thread-safe Adblock Plus / uBlock / Hosts filter engine.
  *
- * Uses immutable snapshot swapping so WebViewClient.shouldInterceptRequest
- * evaluates thousands of domain and pattern rules with zero lock contention.
+ * Uses O(domain_depth) hash maps for both pure-domain rules and host-scoped path rules,
+ * swapping compiled snapshots atomically so WebViewClient.shouldInterceptRequest never locks.
  */
 class AdBlockEngine {
 
     private data class CompiledSnapshot(
         val blockedDomains: Map<String, DomainRuleMeta>,
         val exceptionDomains: Set<String>,
+        val hostPatternRules: Map<String, List<UrlPatternRule>>,
         val patternRules: List<UrlPatternRule>,
         val exceptionPatterns: List<UrlPatternRule>,
         val globalCosmeticSelectors: List<String>,
@@ -28,6 +29,7 @@ class AdBlockEngine {
         CompiledSnapshot(
             blockedDomains = emptyMap(),
             exceptionDomains = emptySet(),
+            hostPatternRules = emptyMap(),
             patternRules = emptyList(),
             exceptionPatterns = emptyList(),
             globalCosmeticSelectors = emptyList(),
@@ -47,9 +49,10 @@ class AdBlockEngine {
     fun getStats(): FilterStats {
         val snap = snapshotRef.get()
         val domainCosmeticCount = snap.domainCosmeticSelectors.values.sumOf { it.size }
+        val hostPatCount = snap.hostPatternRules.values.sumOf { it.size }
         return FilterStats(
             domainRuleCount = snap.blockedDomains.size,
-            patternRuleCount = snap.patternRules.size,
+            patternRuleCount = snap.patternRules.size + hostPatCount,
             exceptionRuleCount = snap.exceptionDomains.size + snap.exceptionPatterns.size,
             cosmeticSelectorCount = snap.globalCosmeticSelectors.size + domainCosmeticCount,
             lastUpdatedIso = snap.lastUpdatedIso
@@ -59,7 +62,6 @@ class AdBlockEngine {
     fun loadFromContext(context: Context, lastUpdatedIso: String? = null) {
         val sources = mutableListOf<Pair<BlockCategory, String>>()
 
-        // 1. Load bundled baseline lists from assets/filters
         val bundledFiles = listOf(
             "filters/easylist-core.txt" to BlockCategory.AD,
             "filters/easyprivacy-core.txt" to BlockCategory.TRACKER,
@@ -74,7 +76,6 @@ class AdBlockEngine {
             }
         }
 
-        // 2. Overlay downloaded filter caches stored on internal app storage
         val cacheDir = File(context.filesDir, "filters")
         if (cacheDir.exists()) {
             cacheDir.listFiles { f -> f.isFile && f.extension == "txt" }?.forEach { file ->
@@ -98,11 +99,12 @@ class AdBlockEngine {
         sources: List<Pair<BlockCategory, String>>,
         lastUpdatedIso: String? = null
     ) {
-        val blockedDomains = HashMap<String, DomainRuleMeta>(4096)
-        val exceptionDomains = HashSet<String>(256)
+        val blockedDomains = HashMap<String, DomainRuleMeta>(32_768)
+        val exceptionDomains = HashSet<String>(512)
+        val hostPatternRules = HashMap<String, MutableList<UrlPatternRule>>(1_024)
         val patternRules = ArrayList<UrlPatternRule>(512)
-        val exceptionPatterns = ArrayList<UrlPatternRule>(64)
-        val globalCosmetics = LinkedHashSet<String>(128)
+        val exceptionPatterns = ArrayList<UrlPatternRule>(128)
+        val globalCosmetics = LinkedHashSet<String>(256)
         val domainCosmetics = HashMap<String, MutableList<String>>(64)
 
         for ((defaultCategory, text) in sources) {
@@ -112,7 +114,6 @@ class AdBlockEngine {
                     return@forEach
                 }
 
-                // Hosts file lines: 0.0.0.0 ads.example.com or 127.0.0.1 tracker.example.com
                 if (line.startsWith("0.0.0.0 ") || line.startsWith("127.0.0.1 ")) {
                     parseHostLine(line, defaultCategory, blockedDomains)
                     return@forEach
@@ -128,12 +129,10 @@ class AdBlockEngine {
                     return@forEach
                 }
 
-                // Exception cosmetic rules are ignored to prevent breaking global map
-                if (line.contains("#@#")) {
+                if (line.contains("#@#") || line.contains("#?#")) {
                     return@forEach
                 }
 
-                // Domain-scoped cosmetic rule: example.com,m.example.com##.ad
                 val cosmeticIdx = line.indexOf("##")
                 if (cosmeticIdx > 0 && !line.startsWith("||") && !line.startsWith("@@")) {
                     val domainsPart = line.substring(0, cosmeticIdx)
@@ -149,7 +148,6 @@ class AdBlockEngine {
                     return@forEach
                 }
 
-                // Network rules
                 val isException = line.startsWith("@@")
                 val bodyAndOptions = if (isException) line.substring(2) else line
                 val dollarIdx = bodyAndOptions.lastIndexOf('$')
@@ -164,14 +162,22 @@ class AdBlockEngine {
                 }
 
                 val parsedOpts = parseOptions(optionsPart)
-                val category = inferCategory(ruleBody, defaultCategory)
+                if (parsedOpts.unsupportedModifierOnly) {
+                    return@forEach
+                }
 
-                // Fast-path pure domain rule: ||example.com^ or ||example.com^$third-party
+                val category = if (parsedOpts.documentOrPopup && defaultCategory == BlockCategory.AD) {
+                    inferCategory(ruleBody, BlockCategory.POPUP)
+                } else {
+                    inferCategory(ruleBody, defaultCategory)
+                }
+
                 if (ruleBody.startsWith("||") && isPureDomainBody(ruleBody)) {
                     val domain = ruleBody.removePrefix("||").removeSuffix("^").lowercase(Locale.ROOT)
                     if (domain.isNotEmpty() && !domain.contains('*')) {
                         if (isException) {
                             exceptionDomains.add(domain)
+                            return@forEach
                         } else if (parsedOpts.allowedDomains.isEmpty() &&
                             parsedOpts.excludedDomains.isEmpty() &&
                             !parsedOpts.scriptOnly
@@ -181,12 +187,11 @@ class AdBlockEngine {
                                 DomainRuleMeta(
                                     thirdPartyOnly = parsedOpts.thirdPartyOnly,
                                     category = category,
-                                    raw = line
+                                    raw = line,
+                                    documentOrPopup = parsedOpts.documentOrPopup
                                 )
                             )
                             return@forEach
-                        } else {
-                            // Domain rule with domain=/script options falls through to pattern rules
                         }
                     }
                 }
@@ -201,6 +206,9 @@ class AdBlockEngine {
                 if (patternRule != null) {
                     if (isException) {
                         exceptionPatterns.add(patternRule)
+                    } else if (patternRule.hostScope != null) {
+                        hostPatternRules.getOrPut(patternRule.hostScope) { mutableListOf() }
+                            .add(patternRule)
                     } else {
                         patternRules.add(patternRule)
                     }
@@ -212,6 +220,7 @@ class AdBlockEngine {
             CompiledSnapshot(
                 blockedDomains = blockedDomains,
                 exceptionDomains = exceptionDomains,
+                hostPatternRules = hostPatternRules,
                 patternRules = patternRules,
                 exceptionPatterns = exceptionPatterns,
                 globalCosmeticSelectors = globalCosmetics.toList(),
@@ -240,7 +249,6 @@ class AdBlockEngine {
 
         val requestHost = extractHost(lowerUrl) ?: return BlockDecision(blocked = false)
 
-        // Never block Aegis internal asset server
         if (requestHost == "appassets.androidplatform.net") {
             return BlockDecision(blocked = false)
         }
@@ -249,7 +257,6 @@ class AdBlockEngine {
         val isThirdParty = isThirdParty(requestHost, pageHost)
         val isScript = looksLikeScript(lowerUrl, acceptHeader)
 
-        // Check exception rules first
         if (matchesDomainSet(requestHost, snap.exceptionDomains)) {
             return BlockDecision(blocked = false)
         }
@@ -259,25 +266,35 @@ class AdBlockEngine {
             }
         }
 
-        // Preserve first-party media segments unless an explicit domain/path ad rule matches
         if (!isThirdParty && isMediaStreamSegment(lowerUrl)) {
             return BlockDecision(blocked = false)
         }
 
-        // Do not aggressively break normal top-level navigation unless it's an ad/popunder host
         if (isMainFrame) {
             val domainHit = findMatchingDomainRule(requestHost, snap.blockedDomains)
-            if (domainHit != null && domainHit.thirdPartyOnly != true) {
+            if (domainHit != null && (domainHit.thirdPartyOnly != true || domainHit.documentOrPopup)) {
                 return BlockDecision(
                     blocked = true,
                     matchedRule = domainHit.raw,
                     category = domainHit.category
                 )
             }
+            matchHostScopedPatterns(requestHost, snap.hostPatternRules, lowerUrl, pageHost, isThirdParty, isScript)
+                ?.let { rule ->
+                    if (rule.documentOrPopup) {
+                        return BlockDecision(blocked = true, matchedRule = rule.raw, category = rule.category)
+                    }
+                }
+            for (rule in snap.patternRules) {
+                if (rule.documentOrPopup &&
+                    matchesPatternRule(rule, lowerUrl, requestHost, pageHost, isThirdParty, isScript)
+                ) {
+                    return BlockDecision(blocked = true, matchedRule = rule.raw, category = rule.category)
+                }
+            }
             return BlockDecision(blocked = false)
         }
 
-        // 1. O(depth) domain hash lookup
         val domainMatch = findMatchingDomainRule(requestHost, snap.blockedDomains)
         if (domainMatch != null) {
             val tpReq = domainMatch.thirdPartyOnly
@@ -290,7 +307,11 @@ class AdBlockEngine {
             }
         }
 
-        // 2. Compiled URL / path pattern rules
+        matchHostScopedPatterns(requestHost, snap.hostPatternRules, lowerUrl, pageHost, isThirdParty, isScript)
+            ?.let { rule ->
+                return BlockDecision(blocked = true, matchedRule = rule.raw, category = rule.category)
+            }
+
         for (rule in snap.patternRules) {
             if (matchesPatternRule(rule, lowerUrl, requestHost, pageHost, isThirdParty, isScript)) {
                 return BlockDecision(
@@ -317,13 +338,11 @@ class AdBlockEngine {
 
         val lowerUrl = targetUrl.lowercase(Locale.ROOT)
         if (cfg.blockPopups && (lowerUrl.startsWith("intent://") || lowerUrl.startsWith("market://"))) {
-            if (!hasUserGesture) {
-                return BlockDecision(
-                    blocked = true,
-                    matchedRule = "scheme:${lowerUrl.substringBefore(':')}",
-                    category = BlockCategory.POPUP
-                )
-            }
+            return BlockDecision(
+                blocked = true,
+                matchedRule = "scheme:${lowerUrl.substringBefore(':')}",
+                category = BlockCategory.POPUP
+            )
         }
 
         if (!lowerUrl.startsWith("http://") && !lowerUrl.startsWith("https://")) {
@@ -347,9 +366,20 @@ class AdBlockEngine {
         }
 
         val isThirdParty = isThirdParty(targetHost, pageHost)
-        if (cfg.blockPopups && !hasUserGesture && isThirdParty) {
+        matchHostScopedPatterns(targetHost, snap.hostPatternRules, lowerUrl, pageHost, isThirdParty, isScript = false)
+            ?.let { rule ->
+                return BlockDecision(
+                    blocked = true,
+                    matchedRule = rule.raw,
+                    category = BlockCategory.POPUP
+                )
+            }
+
+        if (cfg.blockPopups && isThirdParty) {
             for (rule in snap.patternRules) {
-                if (matchesPatternRule(rule, lowerUrl, targetHost, pageHost, isThirdParty = true, isScript = false)) {
+                if ((rule.documentOrPopup || !hasUserGesture) &&
+                    matchesPatternRule(rule, lowerUrl, targetHost, pageHost, isThirdParty = true, isScript = false)
+                ) {
                     return BlockDecision(
                         blocked = true,
                         matchedRule = rule.raw,
@@ -357,9 +387,26 @@ class AdBlockEngine {
                     )
                 }
             }
+            if (isSuspiciousAdRedirectUrl(lowerUrl)) {
+                return BlockDecision(
+                    blocked = true,
+                    matchedRule = "heuristic:ad-redirect",
+                    category = BlockCategory.POPUP
+                )
+            }
         }
 
         return BlockDecision(blocked = false)
+    }
+
+    fun isSuspiciousAdRedirect(targetUrl: String, pageUrl: String?): Boolean {
+        val cfg = configRef.get()
+        val pageHost = extractHost(pageUrl)
+        if (!cfg.enabled || !cfg.blockPopups || !cfg.isEnabledForHost(pageHost)) return false
+        val lowerUrl = targetUrl.lowercase(Locale.ROOT)
+        val targetHost = extractHost(lowerUrl) ?: return false
+        if (!isThirdParty(targetHost, pageHost)) return false
+        return isSuspiciousAdRedirectUrl(lowerUrl)
     }
 
     fun getCosmeticSelectorsForHost(pageHost: String?): List<String> {
@@ -385,6 +432,8 @@ class AdBlockEngine {
     private data class ParsedOptions(
         val thirdPartyOnly: Boolean? = null,
         val scriptOnly: Boolean = false,
+        val documentOrPopup: Boolean = false,
+        val unsupportedModifierOnly: Boolean = false,
         val allowedDomains: Set<String> = emptySet(),
         val excludedDomains: Set<String> = emptySet()
     )
@@ -420,17 +469,24 @@ class AdBlockEngine {
         if (optionsPart.isNullOrBlank()) return ParsedOptions()
         var thirdParty: Boolean? = null
         var scriptOnly = false
+        var documentOrPopup = false
         val allowed = HashSet<String>()
         val excluded = HashSet<String>()
 
-        optionsPart.split(',').forEach { rawOpt ->
+        for (rawOpt in optionsPart.split(',')) {
             val opt = rawOpt.trim().lowercase(Locale.ROOT)
+            if (opt.isEmpty()) continue
+            val key = opt.substringBefore('=')
+            if (key in UNSUPPORTED_MODIFIER_OPTIONS) {
+                return ParsedOptions(unsupportedModifierOnly = true)
+            }
             when {
                 opt == "third-party" || opt == "3p" -> thirdParty = true
                 opt == "~third-party" || opt == "1p" || opt == "first-party" -> thirdParty = false
                 opt == "script" -> scriptOnly = true
-                opt.startsWith("domain=") -> {
-                    opt.removePrefix("domain=").split('|').forEach { dom ->
+                opt == "popup" || opt == "doc" || opt == "document" || opt == "all" -> documentOrPopup = true
+                opt.startsWith("domain=") || opt.startsWith("from=") -> {
+                    opt.substringAfter('=').split('|').forEach { dom ->
                         val d = dom.trim()
                         if (d.startsWith("~") && d.length > 1) {
                             excluded.add(d.substring(1))
@@ -441,7 +497,13 @@ class AdBlockEngine {
                 }
             }
         }
-        return ParsedOptions(thirdParty, scriptOnly, allowed, excluded)
+        return ParsedOptions(
+            thirdPartyOnly = thirdParty,
+            scriptOnly = scriptOnly,
+            documentOrPopup = documentOrPopup,
+            allowedDomains = allowed,
+            excludedDomains = excluded
+        )
     }
 
     private fun isPureDomainBody(body: String): Boolean {
@@ -454,6 +516,16 @@ class AdBlockEngine {
             stripped.contains('.')
     }
 
+    private fun extractHostScopeFromBody(cleanBody: String): String? {
+        if (!cleanBody.startsWith("||")) return null
+        val hostPart = cleanBody.removePrefix("||")
+            .substringBefore('/')
+            .substringBefore('^')
+            .substringBefore('*')
+            .substringBefore('?')
+        return hostPart.takeIf { it.contains('.') && it.length >= 4 }
+    }
+
     private fun compilePatternRule(
         raw: String,
         body: String,
@@ -461,13 +533,11 @@ class AdBlockEngine {
         isException: Boolean,
         category: BlockCategory
     ): UrlPatternRule? {
-        if (body.isBlank() || body == "*" || body.startsWith("/") && body.endsWith("/") && body.length > 2) {
-            // Skip complex raw regex /.../ rules for guaranteed linear safety
+        if (body.isBlank() || body == "*" || (body.startsWith("/") && body.endsWith("/") && body.length > 2)) {
             return null
         }
 
         val cleanBody = body.lowercase(Locale.ROOT)
-        // Extract longest static alphanumeric/path token as fast pre-filter anchor
         val anchor = cleanBody
             .removePrefix("||")
             .removePrefix("|")
@@ -482,6 +552,8 @@ class AdBlockEngine {
             null
         }
 
+        val hostScope = if (!isException) extractHostScopeFromBody(cleanBody) else null
+
         return UrlPatternRule(
             raw = raw,
             anchorLower = anchor,
@@ -491,7 +563,9 @@ class AdBlockEngine {
             excludedDomains = opts.excludedDomains,
             scriptOnly = opts.scriptOnly,
             isException = isException,
-            category = category
+            category = category,
+            documentOrPopup = opts.documentOrPopup,
+            hostScope = hostScope
         )
     }
 
@@ -525,6 +599,31 @@ class AdBlockEngine {
             sb.append("$")
         }
         return Regex(sb.toString())
+    }
+
+    private fun matchHostScopedPatterns(
+        host: String,
+        hostPatterns: Map<String, List<UrlPatternRule>>,
+        lowerUrl: String,
+        pageHost: String?,
+        isThirdParty: Boolean,
+        isScript: Boolean
+    ): UrlPatternRule? {
+        if (hostPatterns.isEmpty()) return null
+        var current: String? = host
+        while (!current.isNullOrEmpty()) {
+            val rules = hostPatterns[current]
+            if (rules != null) {
+                for (rule in rules) {
+                    if (matchesPatternRule(rule, lowerUrl, host, pageHost, isThirdParty, isScript)) {
+                        return rule
+                    }
+                }
+            }
+            val dot = current.indexOf('.')
+            current = if (dot >= 0 && dot + 1 < current.length) current.substring(dot + 1) else null
+        }
+        return null
     }
 
     private fun matchesPatternRule(
@@ -593,10 +692,26 @@ class AdBlockEngine {
     }
 
     companion object {
+        private val UNSUPPORTED_MODIFIER_OPTIONS = setOf(
+            "badfilter", "removeparam", "urlskip", "csp", "redirect", "redirect-rule",
+            "permissions", "header", "replace", "hls", "jsonprune", "xmlprune",
+            "generichide", "ghide", "elemhide", "ehide", "specifichide", "shide",
+            "to", "method", "ipaddress"
+        )
+
+        private val SUSPICIOUS_REDIRECT_MARKERS = arrayOf(
+            "/afu.php", "/popunder", "/popads", "/adclick", "zoneid=", "click_id=",
+            "&adurl=", "?adurl=", "popcash", "propeller", "adsterra", "monetag",
+            "clickadu", "exoclick", "juicyads", "trafficjunky", "hilltopads"
+        )
+
         private val MULTI_PART_SUFFIXES = setOf(
             "co.uk", "org.uk", "ac.uk", "co.in", "net.in", "org.in",
             "com.au", "net.au", "co.jp", "co.kr", "com.br", "com.mx", "co.za"
         )
+
+        fun isSuspiciousAdRedirectUrl(lowerUrl: String): Boolean =
+            SUSPICIOUS_REDIRECT_MARKERS.any { lowerUrl.contains(it) }
 
         fun extractHost(url: String?): String? {
             if (url.isNullOrBlank()) return null

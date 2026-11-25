@@ -104,6 +104,7 @@ export interface TelemetrySnapshot {
 
 export interface BrowserState {
   platform: 'android' | 'webos' | 'web';
+  searchEngine?: SearchEngineId;
   activeTabId: string;
   tabs: TabInfo[];
   shields: ShieldsConfig;

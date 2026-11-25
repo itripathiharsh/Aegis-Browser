@@ -75,15 +75,15 @@ class MainActivity : AppCompatActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, true)
         @Suppress("DEPRECATION")
-        window.statusBarColor = Color.parseColor("#090C10")
+        window.statusBarColor = Color.parseColor("#0B0E14")
         @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.parseColor("#090C10")
+        window.navigationBarColor = Color.parseColor("#0B0E14")
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
 
-        lastBarHeightPx = dpToPx(64)
+        lastBarHeightPx = dpToPx(56)
 
         adBlockEngine = AdBlockEngine()
         adBlockEngine.updateConfig(loadShieldsConfig())
@@ -110,23 +110,23 @@ class MainActivity : AppCompatActivity() {
         )
 
         rootFrame = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#090C10"))
+            setBackgroundColor(Color.parseColor("#0B0E14"))
         }
 
         browserStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#090C10"))
+            setBackgroundColor(Color.parseColor("#0B0E14"))
         }
 
         chromeUiWebView = WebView(this).apply {
-            setBackgroundColor(Color.parseColor("#090C10"))
+            setBackgroundColor(Color.parseColor("#0B0E14"))
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             isFocusable = true
             isFocusableInTouchMode = true
         }
 
         contentContainer = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#090C10"))
+            setBackgroundColor(Color.parseColor("#0B0E14"))
             visibility = View.GONE
         }
 
@@ -181,6 +181,7 @@ class MainActivity : AppCompatActivity() {
             container = contentContainer,
             adBlockEngine = adBlockEngine,
             telemetry = telemetry,
+            initialSearchEngine = loadSearchEngine(),
             onTabsUpdated = {
                 updateViewportSplit()
                 scheduleStatePush()
@@ -202,6 +203,7 @@ class MainActivity : AppCompatActivity() {
             telemetry = telemetry,
             appUpdater = appUpdater,
             saveShieldsConfig = { cfg -> persistShieldsConfig(cfg) },
+            saveSearchEngine = { eng -> persistSearchEngine(eng) },
             onLayoutModeChanged = { expanded, barHeightPx ->
                 overlayExpanded = expanded
                 if (barHeightPx in dpToPx(44)..dpToPx(240)) {
@@ -226,10 +228,15 @@ class MainActivity : AppCompatActivity() {
         handleIncomingIntent(intent)
         updateViewportSplit()
 
-        // Run silent background release check shortly after launch
+        // Silent background release check + 24h automatic upstream filter sync
         scope.launch {
             delay(1500L)
             appUpdater.checkForUpdates(manual = false)
+            delay(1500L)
+            val syncResult = filterUpdater.syncIfStale(24L * 3600_000L)
+            if (syncResult != null && syncResult.syncedSources > 0) {
+                scheduleStatePush()
+            }
         }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -347,7 +354,7 @@ class MainActivity : AppCompatActivity() {
                 contentContainer.visibility = View.GONE
             }
         } else {
-            val targetH = lastBarHeightPx.coerceAtLeast(dpToPx(54))
+            val targetH = lastBarHeightPx.coerceAtLeast(dpToPx(48))
             if (chromeLp.height != targetH) {
                 chromeLp.height = targetH
                 chromeUiWebView.layoutParams = chromeLp
@@ -406,6 +413,17 @@ class MainActivity : AppCompatActivity() {
             "window.__AEGIS_ON_STATE__ && window.__AEGIS_ON_STATE__($json);",
             null
         )
+    }
+
+    private fun loadSearchEngine(): String =
+        getSharedPreferences("aegis_shields", MODE_PRIVATE)
+            .getString("search_engine", "duckduckgo") ?: "duckduckgo"
+
+    private fun persistSearchEngine(engineId: String) {
+        getSharedPreferences("aegis_shields", MODE_PRIVATE)
+            .edit()
+            .putString("search_engine", engineId)
+            .apply()
     }
 
     private fun loadShieldsConfig(): ShieldsConfig {

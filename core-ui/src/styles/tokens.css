@@ -1,100 +1,72 @@
 :root {
-  /* Primitive Palette — Obsidian Shield Console */
-  --slate-950: #090c10;
-  --slate-900: #11161d;
-  --slate-850: #18202b;
-  --slate-800: #212c3a;
-  --slate-700: #303f52;
-  --slate-400: #93a3b8;
-  --slate-100: #edf2f7;
+  /* Obsidian Horizon Palette */
+  --bg-canvas: #0b0e14;
+  --bg-surface: #121722;
+  --bg-elevated: #19202e;
+  --bg-hover: #212a3c;
 
-  --flame-500: #ff6b2b;
-  --flame-400: #ff824d;
-  --flame-300: #ffb067;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  --emerald-400: #22c55e;
-  --sky-400: #38bdf8;
-  --amber-400: #f59e0b;
-  --crimson-400: #ef4444;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
 
-  /* Semantic Color Tokens */
+  --accent: #ff6b2b;
+  --accent-hover: #ff824d;
+  --accent-soft: rgba(255, 107, 43, 0.15);
+  --accent-ink: #0b0e14;
+  --focus-ring: #ffb067;
+
+  --success: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.14);
+  --warn: #f59e0b;
+
   color-scheme: dark;
-  --color-bg: var(--slate-950);
-  --color-surface: var(--slate-900);
-  --color-surface-2: var(--slate-850);
-  --color-surface-3: var(--slate-800);
-  --color-border: rgba(237, 242, 247, 0.12);
-  --color-border-strong: rgba(237, 242, 247, 0.22);
 
-  --color-text: var(--slate-100);
-  --color-text-muted: var(--slate-400);
-
-  --color-action: var(--flame-500);
-  --color-action-hover: var(--flame-400);
-  --color-action-text: #090c10;
-  --color-focus: var(--flame-300);
-
-  --color-success: var(--emerald-400);
-  --color-info: var(--sky-400);
-  --color-warn: var(--amber-400);
-  --color-danger: var(--crimson-400);
-
-  /* Typography */
-  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-  --font-display: var(--font-body);
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --text-xs: clamp(0.75rem, 0.72rem + 0.12vw, 0.8125rem);
-  --text-sm: clamp(0.84rem, 0.81rem + 0.15vw, 0.92rem);
-  --text-base: clamp(0.95rem, 0.92rem + 0.2vw, 1.0625rem);
-  --text-lg: clamp(1.12rem, 1.04rem + 0.38vw, 1.35rem);
-  --text-xl: clamp(1.38rem, 1.2rem + 0.9vw, 2.05rem);
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.1875rem;
+  --text-xl: clamp(1.5rem, 1.25rem + 1.1vw, 2rem);
 
-  --leading-tight: 1.15;
-  --leading-snug: 1.3;
-  --leading-body: 1.55;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
 
-  /* Spacing (4px base) */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.5rem;
-  --space-6: 2rem;
-
-  /* Shape Hierarchy */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
   --radius-pill: 999px;
 
-  /* Elevation */
-  --shadow-1: 0 2px 6px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.65);
 
-  /* Motion */
   --dur-fast: 110ms;
-  --dur-base: 200ms;
+  --dur-base: 190ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  /* Touch & 10-foot TV Targets */
   --target-min: 44px;
-  --z-sticky: 100;
-  --z-overlay: 200;
+  --z-bar: 100;
+  --z-menu: 220;
   --z-modal: 300;
-  --z-toast: 400;
-}
-
-@media (min-width: 64em) {
-  :root {
-    --target-min: 48px;
-  }
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 * {
@@ -103,14 +75,14 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  background: var(--color-bg);
+  background: var(--bg-canvas);
 }
 
 body {
   min-height: 100dvh;
-  font: var(--text-base) / var(--leading-body) var(--font-body);
-  color: var(--color-text);
-  background: var(--color-bg);
+  font: 400 var(--text-base) / 1.5 var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-canvas);
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
@@ -124,13 +96,15 @@ select {
 
 button {
   cursor: pointer;
+  background: none;
+  border: 0;
 }
 
 :focus-visible,
 [data-dpad-focused="true"] {
-  outline: 3px solid var(--color-focus);
+  outline: 2.5px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 0 6px rgba(255, 176, 103, 0.22);
+  box-shadow: 0 0 0 5px rgba(255, 176, 103, 0.2);
 }
 
 .sr-only {

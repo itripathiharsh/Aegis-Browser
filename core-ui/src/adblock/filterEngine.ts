@@ -15,7 +15,32 @@ interface PatternRule {
   excludedDomains: Set<string>;
   scriptOnly: boolean;
   category: BlockCategory;
+  hostScope: string | null;
 }
+
+const UNSUPPORTED_MODIFIERS = new Set([
+  'badfilter',
+  'removeparam',
+  'urlskip',
+  'csp',
+  'redirect',
+  'redirect-rule',
+  'permissions',
+  'header',
+  'replace',
+  'hls',
+  'jsonprune',
+  'xmlprune',
+  'generichide',
+  'ghide',
+  'elemhide',
+  'ehide',
+  'specifichide',
+  'shide',
+  'to',
+  'method',
+  'ipaddress',
+]);
 
 const MULTI_PART_SUFFIXES = new Set([
   'co.uk',
@@ -78,6 +103,7 @@ export function isHostShieldsEnabled(config: ShieldsConfig, host: string | null)
 export class FilterEngine {
   private blockedDomains = new Map<string, DomainRuleMeta>();
   private exceptionDomains = new Set<string>();
+  private hostPatternRules = new Map<string, PatternRule[]>();
   private patternRules: PatternRule[] = [];
   private exceptionPatterns: PatternRule[] = [];
   private globalCosmetics = new Set<string>();
@@ -90,6 +116,7 @@ export class FilterEngine {
   ): FilterStats {
     const blockedDomains = new Map<string, DomainRuleMeta>();
     const exceptionDomains = new Set<string>();
+    const hostPatternRules = new Map<string, PatternRule[]>();
     const patternRules: PatternRule[] = [];
     const exceptionPatterns: PatternRule[] = [];
     const globalCosmetics = new Set<string>();
@@ -134,7 +161,7 @@ export class FilterEngine {
           continue;
         }
 
-        if (line.includes('#@#')) continue;
+        if (line.includes('#@#') || line.includes('#?#')) continue;
 
         const cosmeticIdx = line.indexOf('##');
         if (cosmeticIdx > 0 && !line.startsWith('||') && !line.startsWith('@@')) {
@@ -160,6 +187,7 @@ export class FilterEngine {
         const ruleBody = hasOpts ? bodyAndOpts.slice(0, dollarIdx) : bodyAndOpts;
         const optsPart = hasOpts ? bodyAndOpts.slice(dollarIdx + 1) : '';
         const opts = parseOptions(optsPart);
+        if (opts.unsupported) continue;
         const inferredCat = inferCategory(ruleBody, category);
 
         if (ruleBody.startsWith('||') && isPureDomainBody(ruleBody)) {
@@ -186,10 +214,14 @@ export class FilterEngine {
           }
         }
 
-        const compiled = compilePatternRule(line, ruleBody, opts, inferredCat);
+        const compiled = compilePatternRule(line, ruleBody, opts, inferredCat, isException);
         if (compiled) {
           if (isException) {
             exceptionPatterns.push(compiled);
+          } else if (compiled.hostScope) {
+            const list = hostPatternRules.get(compiled.hostScope) ?? [];
+            list.push(compiled);
+            hostPatternRules.set(compiled.hostScope, list);
           } else {
             patternRules.push(compiled);
           }
@@ -199,6 +231,7 @@ export class FilterEngine {
 
     this.blockedDomains = blockedDomains;
     this.exceptionDomains = exceptionDomains;
+    this.hostPatternRules = hostPatternRules;
     this.patternRules = patternRules;
     this.exceptionPatterns = exceptionPatterns;
     this.globalCosmetics = globalCosmetics;
@@ -215,9 +248,13 @@ export class FilterEngine {
     for (const list of this.domainCosmetics.values()) {
       domainCosmeticCount += list.length;
     }
+    let hostPatternCount = 0;
+    for (const list of this.hostPatternRules.values()) {
+      hostPatternCount += list.length;
+    }
     return {
       domainRuleCount: this.blockedDomains.size,
-      patternRuleCount: this.patternRules.length,
+      patternRuleCount: this.patternRules.length + hostPatternCount,
       exceptionRuleCount: this.exceptionDomains.size + this.exceptionPatterns.length,
       cosmeticSelectorCount: this.globalCosmetics.size + domainCosmeticCount,
       lastUpdatedIso: this.lastUpdatedIso,
@@ -267,6 +304,20 @@ export class FilterEngine {
       }
     }
 
+    let curHost: string | null = requestHost;
+    while (curHost) {
+      const scoped = this.hostPatternRules.get(curHost);
+      if (scoped) {
+        for (const rule of scoped) {
+          if (matchesPatternRule(rule, lowerUrl, pageHost, thirdParty, isScript)) {
+            return { blocked: true, matchedRule: rule.raw, category: rule.category };
+          }
+        }
+      }
+      const dot = curHost.indexOf('.');
+      curHost = dot >= 0 && dot + 1 < curHost.length ? curHost.slice(dot + 1) : null;
+    }
+
     for (const rule of this.patternRules) {
       if (matchesPatternRule(rule, lowerUrl, pageHost, thirdParty, isScript)) {
         return {
@@ -303,27 +354,33 @@ export class FilterEngine {
 function parseOptions(optionsPart: string) {
   let thirdPartyOnly: boolean | null = null;
   let scriptOnly = false;
+  let unsupported = false;
   const allowedDomains = new Set<string>();
   const excludedDomains = new Set<string>();
 
   if (!optionsPart) {
-    return { thirdPartyOnly, scriptOnly, allowedDomains, excludedDomains };
+    return { thirdPartyOnly, scriptOnly, unsupported, allowedDomains, excludedDomains };
   }
 
   for (const rawOpt of optionsPart.split(',')) {
     const opt = rawOpt.trim().toLowerCase();
+    if (!opt) continue;
+    const key = opt.split('=')[0];
+    if (UNSUPPORTED_MODIFIERS.has(key)) {
+      return { thirdPartyOnly, scriptOnly, unsupported: true, allowedDomains, excludedDomains };
+    }
     if (opt === 'third-party' || opt === '3p') thirdPartyOnly = true;
     else if (opt === '~third-party' || opt === '1p' || opt === 'first-party') thirdPartyOnly = false;
     else if (opt === 'script') scriptOnly = true;
-    else if (opt.startsWith('domain=')) {
-      for (const dom of opt.slice(7).split('|')) {
+    else if (opt.startsWith('domain=') || opt.startsWith('from=')) {
+      for (const dom of opt.slice(opt.indexOf('=') + 1).split('|')) {
         const d = dom.trim();
         if (d.startsWith('~') && d.length > 1) excludedDomains.add(d.slice(1));
         else if (d) allowedDomains.add(d);
       }
     }
   }
-  return { thirdPartyOnly, scriptOnly, allowedDomains, excludedDomains };
+  return { thirdPartyOnly, scriptOnly, unsupported, allowedDomains, excludedDomains };
 }
 
 function isPureDomainBody(body: string): boolean {
@@ -342,7 +399,8 @@ function compilePatternRule(
   raw: string,
   body: string,
   opts: ReturnType<typeof parseOptions>,
-  category: BlockCategory
+  category: BlockCategory,
+  isException = false
 ): PatternRule | null {
   if (!body || body === '*' || (body.startsWith('/') && body.endsWith('/') && body.length > 2)) {
     return null;
@@ -364,6 +422,12 @@ function compilePatternRule(
     }
   }
 
+  let hostScope: string | null = null;
+  if (!isException && clean.startsWith('||')) {
+    const h = clean.slice(2).split(/[/*^?]/)[0];
+    if (h.includes('.') && h.length >= 4) hostScope = h;
+  }
+
   return {
     raw,
     anchorLower: anchor,
@@ -373,6 +437,7 @@ function compilePatternRule(
     excludedDomains: opts.excludedDomains,
     scriptOnly: opts.scriptOnly,
     category,
+    hostScope,
   };
 }
 

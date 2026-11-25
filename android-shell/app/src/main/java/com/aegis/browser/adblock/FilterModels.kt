@@ -28,6 +28,7 @@ data class DomainRuleMeta(
     val thirdPartyOnly: Boolean?,
     val category: BlockCategory,
     val raw: String,
+    val documentOrPopup: Boolean = false,
     val allowedDomains: Set<String> = emptySet(),
     val excludedDomains: Set<String> = emptySet()
 )
@@ -41,7 +42,9 @@ data class UrlPatternRule(
     val excludedDomains: Set<String>,
     val scriptOnly: Boolean,
     val isException: Boolean,
-    val category: BlockCategory
+    val category: BlockCategory,
+    val documentOrPopup: Boolean = false,
+    val hostScope: String? = null
 )
 
 data class BlockDecision(

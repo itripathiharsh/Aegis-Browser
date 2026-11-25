@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { SearchEngineId, TabInfo } from '../adblock/types';
-import { formatDisplayUrl } from '../utils/urlResolver';
+import { SEARCH_ENGINES, formatDisplayUrl } from '../utils/urlResolver';
 import {
   BackIcon,
   BookmarkIcon,
+  DesktopIcon,
   ForwardIcon,
   HomeIcon,
   LockIcon,
+  MoreVertIcon,
+  PlayIcon,
   ReloadIcon,
   ShieldIcon,
   StopIcon,
-  TabsIcon,
 } from './Icons';
 
 interface TopBarProps {
@@ -21,14 +23,18 @@ interface TopBarProps {
   isBookmarked: boolean;
   searchEngine: SearchEngineId;
   activeDrawer: 'tabs' | 'bookmarks' | 'shields' | null;
+  menuOpen: boolean;
   omniboxInputRef: React.RefObject<HTMLInputElement>;
-  barRef: React.RefObject<HTMLElement>;
+  barRef: React.RefObject<HTMLDivElement>;
+  onToggleMenu: (open: boolean) => void;
   onNavigate: (rawInput: string) => void;
   onBack: () => void;
   onForward: () => void;
   onReloadOrStop: () => void;
   onGoHome: () => void;
   onToggleBookmark: () => void;
+  onToggleDesktopMode: () => void;
+  onCheckUpdates: () => void;
   onOpenDrawer: (drawer: 'tabs' | 'bookmarks' | 'shields') => void;
 }
 
@@ -40,14 +46,18 @@ export const TopBar: React.FC<TopBarProps> = ({
   isBookmarked,
   searchEngine,
   activeDrawer,
+  menuOpen,
   omniboxInputRef,
   barRef,
+  onToggleMenu,
   onNavigate,
   onBack,
   onForward,
   onReloadOrStop,
   onGoHome,
   onToggleBookmark,
+  onToggleDesktopMode,
+  onCheckUpdates,
   onOpenDrawer,
 }) => {
   const [draft, setDraft] = useState('');
@@ -72,6 +82,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, [totalBlocked]);
 
   const { isSecure, isInternal } = formatDisplayUrl(activeTab.url);
+  const engineLabel = SEARCH_ENGINES[searchEngine]?.label ?? 'Search';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,11 +92,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <header ref={barRef} className="topbar" aria-label="Browser navigation controls">
-      <div className="topbar-nav-group">
+    <div ref={barRef} className="topbar-wrap">
+      <header className="topbar" aria-label="Browser navigation controls">
         <button
           type="button"
-          className="icon-btn"
+          className="nav-btn"
           aria-label="Go back"
           disabled={!activeTab.canGoBack && isInternal}
           onClick={onBack}
@@ -95,7 +106,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         <button
           type="button"
-          className="icon-btn"
+          className="nav-btn desktop-only-btn"
           aria-label="Go forward"
           disabled={!activeTab.canGoForward}
           onClick={onForward}
@@ -105,111 +116,122 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         <button
           type="button"
-          className="icon-btn"
-          aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
-          disabled={isInternal}
-          onClick={onReloadOrStop}
-        >
-          {activeTab.isLoading ? <StopIcon /> : <ReloadIcon />}
-        </button>
-
-        <button
-          type="button"
-          className="icon-btn"
+          className="nav-btn desktop-only-btn"
           aria-label="Home start page"
-          aria-pressed={activeTab.url === 'aegis://home'}
           onClick={onGoHome}
         >
           <HomeIcon />
         </button>
-      </div>
 
-      <form className="omnibox-form" onSubmit={handleSubmit} role="search">
-        <span
-          className="omnibox-status-icon"
-          data-secure={isSecure ? 'true' : 'false'}
-          title={isSecure ? 'Encrypted or internal Aegis page' : 'Unencrypted HTTP'}
-        >
-          <LockIcon />
-        </span>
-
-        <label htmlFor="aegis-omnibox" className="sr-only">
-          Address or search query
-        </label>
-        <input
-          id="aegis-omnibox"
-          ref={omniboxInputRef}
-          className="omnibox-input"
-          type="text"
-          inputMode="url"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          value={draft}
-          placeholder={`Search ${searchEngine} or enter URL / .m3u8`}
-          onFocus={(e) => {
-            setIsEditing(true);
-            e.currentTarget.select();
-          }}
-          onBlur={() => setIsEditing(false)}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-
-        {!isInternal && (
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
-            aria-pressed={isBookmarked}
-            onClick={onToggleBookmark}
+        <form className="omnibox-pill" onSubmit={handleSubmit} role="search">
+          <span
+            className="omnibox-lock"
+            data-secure={isSecure ? 'true' : 'false'}
+            title={isSecure ? 'Secure connection' : 'Not encrypted (HTTP)'}
           >
-            <BookmarkIcon filled={isBookmarked} />
-          </button>
-        )}
+            <LockIcon />
+          </span>
 
-        <button type="submit" className="omnibox-go-btn">
-          Go
-        </button>
-      </form>
+          <label htmlFor="aegis-omnibox" className="sr-only">
+            Address or search query
+          </label>
+          <input
+            id="aegis-omnibox"
+            ref={omniboxInputRef}
+            className="omnibox-input"
+            type="text"
+            inputMode="url"
+            enterKeyHint="go"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={draft}
+            placeholder={`Search ${engineLabel} or URL`}
+            onFocus={(e) => {
+              setIsEditing(true);
+              e.currentTarget.select();
+            }}
+            onBlur={() => {
+              setTimeout(() => setIsEditing(false), 120);
+            }}
+            onChange={(e) => setDraft(e.target.value)}
+          />
 
-      <div className="topbar-actions-group">
+          {isEditing && draft.length > 0 ? (
+            <>
+              <button
+                type="button"
+                className="omnibox-inline-btn"
+                aria-label="Clear address"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setDraft('');
+                  omniboxInputRef.current?.focus();
+                }}
+              >
+                <StopIcon size={15} />
+              </button>
+              <button
+                type="submit"
+                className="omnibox-go-chip"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                Go
+              </button>
+            </>
+          ) : (
+            !isInternal && (
+              <button
+                type="button"
+                className="omnibox-inline-btn"
+                aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
+                onClick={onReloadOrStop}
+              >
+                {activeTab.isLoading ? <StopIcon size={16} /> : <ReloadIcon size={16} />}
+              </button>
+            )
+          )}
+        </form>
+
         <button
           type="button"
-          className="icon-btn"
-          aria-label={`Open tabs switcher (${tabCount} open)`}
-          aria-expanded={activeDrawer === 'tabs'}
-          onClick={() => onOpenDrawer('tabs')}
-        >
-          <TabsIcon />
-          <span className="btn-label-sm">{tabCount}</span>
-        </button>
-
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Open bookmarks"
-          aria-expanded={activeDrawer === 'bookmarks'}
-          onClick={() => onOpenDrawer('bookmarks')}
-        >
-          <BookmarkIcon />
-        </button>
-
-        <button
-          type="button"
-          className="shields-pill"
+          className="shields-btn"
           data-active={shieldsEnabledForSite ? 'true' : 'false'}
           data-pulse={pulse ? 'true' : 'false'}
-          aria-label={`Aegis Shields: ${totalBlocked} ads and trackers blocked`}
+          aria-label={`Aegis Shields: ${totalBlocked} blocked`}
           aria-expanded={activeDrawer === 'shields'}
-          onClick={() => onOpenDrawer('shields')}
+          onClick={() => {
+            onToggleMenu(false);
+            onOpenDrawer('shields');
+          }}
         >
           <ShieldIcon size={16} />
-          <span>Shields</span>
-          <span className="shields-count" aria-live="polite">
-            {totalBlocked.toLocaleString()}
-          </span>
+          <span>{totalBlocked > 999 ? '999+' : totalBlocked}</span>
         </button>
-      </div>
+
+        <button
+          type="button"
+          className="tabs-square-btn"
+          aria-label={`Open tabs (${tabCount})`}
+          aria-expanded={activeDrawer === 'tabs'}
+          onClick={() => {
+            onToggleMenu(false);
+            onOpenDrawer('tabs');
+          }}
+        >
+          <span className="tabs-square-num">{tabCount}</span>
+        </button>
+
+        <button
+          type="button"
+          className="nav-btn"
+          aria-label="More options"
+          aria-expanded={menuOpen}
+          onClick={() => onToggleMenu(!menuOpen)}
+        >
+          <MoreVertIcon />
+        </button>
+      </header>
 
       {activeTab.isLoading && (
         <div
@@ -225,6 +247,140 @@ export const TopBar: React.FC<TopBarProps> = ({
           />
         </div>
       )}
-    </header>
+
+      {menuOpen && (
+        <div
+          className="menu-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onToggleMenu(false);
+          }}
+        >
+          <nav className="overflow-menu" aria-label="Browser menu">
+            <div className="menu-nav-row">
+              <button
+                type="button"
+                className="menu-icon-tile"
+                disabled={!activeTab.canGoForward}
+                onClick={() => {
+                  onForward();
+                  onToggleMenu(false);
+                }}
+              >
+                <ForwardIcon size={18} />
+                <span>Forward</span>
+              </button>
+              <button
+                type="button"
+                className="menu-icon-tile"
+                disabled={isInternal}
+                onClick={() => {
+                  onReloadOrStop();
+                  onToggleMenu(false);
+                }}
+              >
+                <ReloadIcon size={18} />
+                <span>Reload</span>
+              </button>
+              <button
+                type="button"
+                className="menu-icon-tile"
+                onClick={() => {
+                  onGoHome();
+                  onToggleMenu(false);
+                }}
+              >
+                <HomeIcon size={18} />
+                <span>Home</span>
+              </button>
+              <button
+                type="button"
+                className="menu-icon-tile"
+                disabled={isInternal}
+                onClick={() => {
+                  onToggleBookmark();
+                  onToggleMenu(false);
+                }}
+              >
+                <BookmarkIcon size={18} filled={isBookmarked} />
+                <span>{isBookmarked ? 'Saved' : 'Save'}</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onToggleMenu(false);
+                onOpenDrawer('bookmarks');
+              }}
+            >
+              <span className="menu-item-left">
+                <BookmarkIcon size={17} />
+                <span>Bookmarks</span>
+              </span>
+            </button>
+
+            {!isInternal && (
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => {
+                  onToggleDesktopMode();
+                  onToggleMenu(false);
+                }}
+              >
+                <span className="menu-item-left">
+                  <DesktopIcon size={17} />
+                  <span>Desktop site</span>
+                </span>
+                <span className="menu-badge">{activeTab.desktopMode ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onNavigate('aegis://player');
+                onToggleMenu(false);
+              }}
+            >
+              <span className="menu-item-left">
+                <PlayIcon size={17} />
+                <span>Stream Player</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onToggleMenu(false);
+                onOpenDrawer('shields');
+              }}
+            >
+              <span className="menu-item-left">
+                <ShieldIcon size={17} />
+                <span>Shields &amp; Filters</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onToggleMenu(false);
+                onCheckUpdates();
+              }}
+            >
+              <span className="menu-item-left">
+                <ReloadIcon size={17} />
+                <span>Check for Updates</span>
+              </span>
+            </button>
+          </nav>
+        </div>
+      )}
+    </div>
   );
 };

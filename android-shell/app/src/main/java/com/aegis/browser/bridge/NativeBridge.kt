@@ -21,6 +21,7 @@ class NativeBridge(
     private val telemetry: ShieldsTelemetry,
     private val appUpdater: AppUpdater,
     private val saveShieldsConfig: (ShieldsConfig) -> Unit,
+    private val saveSearchEngine: (String) -> Unit,
     private val onLayoutModeChanged: (expanded: Boolean, barHeightPx: Int) -> Unit,
     private val onPushStateToUi: () -> Unit,
     private val onFilterSyncCompleted: (String) -> Unit
@@ -72,6 +73,14 @@ class NativeBridge(
     @JavascriptInterface
     fun setDesktopMode(tabId: String, desktop: Boolean) {
         runOnUi { tabManager.setDesktopMode(tabId, desktop) }
+    }
+
+    @JavascriptInterface
+    fun setSearchEngine(engineId: String) {
+        val normalized = TabManager.normalizeEngine(engineId)
+        tabManager.setSearchEngine(normalized)
+        saveSearchEngine(normalized)
+        runOnUi { onPushStateToUi() }
     }
 
     @JavascriptInterface
@@ -257,6 +266,7 @@ class NativeBridge(
 
         return JSONObject().apply {
             put("platform", "android")
+            put("searchEngine", tabManager.getSearchEngine())
             put("activeTabId", tabManager.getActiveTabId())
             put("tabs", tabsArr)
             put("shields", shieldsObj)

@@ -131,4 +131,29 @@ class AdBlockEngineTest {
         assertTrue(ytSelectors.contains(".adsbygoogle"))
         assertTrue(ytSelectors.contains("#player-ads"))
     }
+
+    @Test
+    fun skipsNonBlockingModifierRulesAndBlocksSuspiciousRedirects() {
+        val engine = AdBlockEngine()
+        engine.compileRules(
+            listOf(
+                BlockCategory.TRACKER to """
+                    ||youtube.com^${'$'}removeparam=si
+                    ||reddit.com^${'$'}csp=script-src 'none'
+                    ||ads.example.org^${'$'}all
+                """.trimIndent()
+            )
+        )
+        assertFalse(
+            "Modifier-only removeparam rule must not block main domain",
+            engine.evaluateRequest("https://www.youtube.com/watch?v=1", "https://www.youtube.com/").blocked
+        )
+        assertFalse(
+            "Modifier-only csp rule must not block domain",
+            engine.evaluateRequest("https://www.reddit.com/", "https://www.reddit.com/").blocked
+        )
+        assertTrue(
+            engine.evaluateNavigation("https://track.partner.xyz/afu.php?zoneid=99", "https://movie.example.com/", true).blocked
+        )
+    }
 }
