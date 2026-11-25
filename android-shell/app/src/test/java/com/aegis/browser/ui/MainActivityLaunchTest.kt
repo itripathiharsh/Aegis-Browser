@@ -183,20 +183,63 @@ class MainActivityLaunchTest {
         val dataStore = BrowserDataStore(context)
         dataStore.clearHistoryAndRecommendations()
 
-        // Search SERP should go to history but NOT recommendations
+        // Search engines (including bare Brave homepage) and rotating ad-mirrors must NEVER enter recommendations
         dataStore.recordVisit("https://duckduckgo.com/?q=privacy", "privacy at DuckDuckGo", "duckduckgo.com")
+        dataStore.recordVisit("https://search.brave.com/", "Brave Search", "search.brave.com")
+        dataStore.recordVisit("https://new16.hdhub4u.cl/redirect", "New16", "new16.hdhub4u.cl")
         dataStore.recordVisit("https://github.com/itripathiharsh/Aegis-Browser", "GitHub - Aegis", "github.com")
+        // Rapid repeat call within 15s must not double-count visits
         dataStore.recordVisit("https://github.com/itripathiharsh/Aegis-Browser", "GitHub - Aegis", "github.com")
 
-        assertEquals(2, dataStore.getHistoryJson().length())
+        assertEquals(4, dataStore.getHistoryJson().length())
         val recs = dataStore.getTopRecommendations()
         assertEquals(1, recs.size)
         assertEquals("github.com", recs[0].host)
-        assertEquals(2, recs[0].visits)
+        assertEquals(1, recs[0].visits)
+
+        dataStore.dismissRecommendation("github.com")
+        assertEquals(0, dataStore.getTopRecommendations().size)
+
+        // Legacy poisoned recommendations in prefs must be scrubbed automatically on init
+        val rawPrefs = context.getSharedPreferences("aegis_browser_data", android.content.Context.MODE_PRIVATE)
+        rawPrefs.edit().putString(
+            "recommendations_v1",
+            org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("url", "https://new16.hdhub4u.cl/")
+                    put("title", "New16")
+                    put("host", "new16.hdhub4u.cl")
+                    put("visits", 6)
+                })
+                put(JSONObject().apply {
+                    put("url", "https://search.brave.com/")
+                    put("title", "Brave Search")
+                    put("host", "search.brave.com")
+                    put("visits", 2)
+                })
+                put(JSONObject().apply {
+                    put("url", "https://hdhub4u.kz/")
+                    put("title", "HDHub4u")
+                    put("host", "hdhub4u.kz")
+                    put("visits", 2)
+                })
+            }.toString()
+        ).commit()
+        val scrubbedStore = BrowserDataStore(context)
+        val cleanedRecs = scrubbedStore.getTopRecommendations()
+        assertEquals(1, cleanedRecs.size)
+        assertEquals("hdhub4u.kz", cleanedRecs[0].host)
+
+        // Stream player interception is removed; MP4 links stay direct
+        assertEquals(
+            "https://example.com/video.mp4",
+            TabManager.resolveUserInput("https://example.com/video.mp4", "brave")
+        )
 
         dataStore.updateSettings(
             BrowserSettings(
                 searchEngine = "google",
+                theme = "light",
                 blockThirdPartyCookies = true,
                 defaultDesktopMode = true,
                 showRecommendations = false,
@@ -206,6 +249,7 @@ class MainActivityLaunchTest {
         )
         assertEquals(0, dataStore.getTopRecommendations().size)
         assertEquals("google", dataStore.getSettings().searchEngine)
+        assertEquals("light", dataStore.getSettings().theme)
 
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         val activity = controller.get()
@@ -220,6 +264,7 @@ class MainActivityLaunchTest {
         bridge.updateSettings(
             JSONObject().apply {
                 put("searchEngine", "startpage")
+                put("theme", "light")
                 put("blockThirdPartyCookies", true)
                 put("defaultDesktopMode", false)
                 put("showRecommendations", true)
@@ -229,6 +274,7 @@ class MainActivityLaunchTest {
         )
         val updatedState = bridge.buildStateJson()
         assertEquals("startpage", updatedState.getString("searchEngine"))
+        assertEquals("light", updatedState.getJSONObject("settings").getString("theme"))
 
         val historyArr = JSONArray(bridge.getHistory())
         if (historyArr.length() > 0) {

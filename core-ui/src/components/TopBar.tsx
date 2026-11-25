@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import type { SearchEngineId, TabInfo } from '../adblock/types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { BookmarkItem, HistoryEntry, SearchEngineId, TabInfo } from '../adblock/types';
+import { buildOmniboxSuggestions, type OmniboxSuggestion } from '../utils/suggestions';
 import { SEARCH_ENGINES, formatDisplayUrl } from '../utils/urlResolver';
 import {
   DownloadIcon,
@@ -7,6 +8,7 @@ import {
   SettingsIcon,
 } from './BrowserIcons';
 import {
+  AegisCrest,
   BackIcon,
   BookmarkIcon,
   DesktopIcon,
@@ -14,11 +16,11 @@ import {
   HomeIcon,
   LockIcon,
   MoreVertIcon,
-  PlayIcon,
   ReloadIcon,
   ShieldIcon,
   StopIcon,
 } from './Icons';
+import { SuggestionDropdown } from './SuggestionDropdown';
 
 export type DrawerKind =
   | 'tabs'
@@ -36,11 +38,14 @@ interface TopBarProps {
   shieldsEnabledForSite: boolean;
   isBookmarked: boolean;
   searchEngine: SearchEngineId;
+  historyEntries: HistoryEntry[];
+  bookmarks: BookmarkItem[];
   activeDrawer: DrawerKind | null;
   menuOpen: boolean;
   omniboxInputRef: React.RefObject<HTMLInputElement>;
   barRef: React.RefObject<HTMLDivElement>;
   onToggleMenu: (open: boolean) => void;
+  onSuggestionsVisibleChange: (visible: boolean) => void;
   onNavigate: (rawInput: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -59,11 +64,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   shieldsEnabledForSite,
   isBookmarked,
   searchEngine,
+  historyEntries,
+  bookmarks,
   activeDrawer,
   menuOpen,
   omniboxInputRef,
   barRef,
   onToggleMenu,
+  onSuggestionsVisibleChange,
   onNavigate,
   onBack,
   onForward,
@@ -87,150 +95,190 @@ export const TopBar: React.FC<TopBarProps> = ({
   useEffect(() => {
     if (totalBlocked > prevBlockedRef.current) {
       setPulse(true);
-      const timer = setTimeout(() => setPulse(false), 450);
+      const t = window.setTimeout(() => setPulse(false), 450);
       prevBlockedRef.current = totalBlocked;
-      return () => clearTimeout(timer);
+      return () => window.clearTimeout(t);
     }
     prevBlockedRef.current = totalBlocked;
   }, [totalBlocked]);
 
-  const { isSecure, isInternal } = formatDisplayUrl(activeTab.url);
-  const engineLabel = SEARCH_ENGINES[searchEngine]?.label ?? 'Search';
+  const { hostLabel, isSecure, isInternal } = formatDisplayUrl(activeTab.url);
+  const engineLabel = SEARCH_ENGINES[searchEngine]?.label ?? 'DuckDuckGo';
+
+  const suggestions = useMemo(
+    () =>
+      isEditing && !isInternal
+        ? buildOmniboxSuggestions(draft, historyEntries, bookmarks, 6)
+        : [],
+    [bookmarks, draft, historyEntries, isEditing, isInternal]
+  );
+
+  useEffect(() => {
+    onSuggestionsVisibleChange(isEditing && !isInternal && suggestions.length > 0);
+  }, [isEditing, isInternal, onSuggestionsVisibleChange, suggestions.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const clean = draft.trim();
+    if (!clean) return;
     setIsEditing(false);
     omniboxInputRef.current?.blur();
-    onNavigate(draft.trim() || 'aegis://home');
+    onNavigate(clean);
+  };
+
+  const handleSelectSuggestion = (item: OmniboxSuggestion) => {
+    setIsEditing(false);
+    omniboxInputRef.current?.blur();
+    onNavigate(item.navigateTarget);
   };
 
   return (
-    <div ref={barRef} className="topbar-wrap">
-      <header className="topbar" aria-label="Browser navigation controls">
-        <button
-          type="button"
-          className="nav-btn"
-          aria-label="Go back"
-          disabled={!activeTab.canGoBack && isInternal}
-          onClick={onBack}
-        >
-          <BackIcon />
-        </button>
+    <div className="topbar-wrap" ref={barRef} data-home={isInternal ? 'true' : 'false'}>
+      <header className="topbar" role="toolbar" aria-label="Browser navigation">
+        {isInternal ? (
+          <>
+            <button
+              type="button"
+              className="home-topbar-brand"
+              aria-label="Open Aegis Shields"
+              onClick={() => {
+                onToggleMenu(false);
+                onOpenDrawer('shields');
+              }}
+            >
+              <AegisCrest size={24} />
+              <span className="home-topbar-name">Aegis</span>
+            </button>
+            <div className="topbar-spacer" />
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="nav-btn"
+              aria-label="Back"
+              disabled={!activeTab.canGoBack}
+              onClick={onBack}
+            >
+              <BackIcon />
+            </button>
 
-        <button
-          type="button"
-          className="nav-btn desktop-only-btn"
-          aria-label="Go forward"
-          disabled={!activeTab.canGoForward}
-          onClick={onForward}
-        >
-          <ForwardIcon />
-        </button>
+            <button
+              type="button"
+              className="nav-btn desktop-only-btn"
+              aria-label="Forward"
+              disabled={!activeTab.canGoForward}
+              onClick={onForward}
+            >
+              <ForwardIcon />
+            </button>
 
-        <button
-          type="button"
-          className="nav-btn desktop-only-btn"
-          aria-label="Home start page"
-          onClick={onGoHome}
-        >
-          <HomeIcon />
-        </button>
+            <button
+              type="button"
+              className="nav-btn desktop-only-btn"
+              aria-label="Home"
+              onClick={onGoHome}
+            >
+              <HomeIcon />
+            </button>
 
-        <form className="omnibox-pill" onSubmit={handleSubmit} role="search">
-          <span
-            className="omnibox-lock"
-            data-secure={isSecure ? 'true' : 'false'}
-            title={isSecure ? 'Secure connection' : 'Not encrypted (HTTP)'}
-          >
-            <LockIcon />
-          </span>
+            <form className="omnibox-pill" onSubmit={handleSubmit} role="search">
+              <span
+                className="omnibox-lock"
+                data-secure={isSecure ? 'true' : 'false'}
+                title={isSecure ? 'HTTPS Secure' : 'Not Encrypted'}
+              >
+                <LockIcon size={14} />
+              </span>
 
-          <label htmlFor="aegis-omnibox" className="sr-only">
-            Address or search query
-          </label>
-          <input
-            id="aegis-omnibox"
-            ref={omniboxInputRef}
-            className="omnibox-input"
-            type="text"
-            inputMode="url"
-            enterKeyHint="go"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={draft}
-            placeholder={`Search ${engineLabel} or URL`}
-            onFocus={(e) => {
-              setIsEditing(true);
-              e.currentTarget.select();
-            }}
-            onBlur={() => {
-              setTimeout(() => setIsEditing(false), 120);
-            }}
-            onChange={(e) => setDraft(e.target.value)}
-          />
-
-          {isEditing && draft.length > 0 ? (
-            <>
-              <button
-                type="button"
-                className="omnibox-inline-btn"
-                aria-label="Clear address"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setDraft('');
-                  omniboxInputRef.current?.focus();
+              <label htmlFor="aegis-omnibox" className="sr-only">
+                Search or enter website URL
+              </label>
+              <input
+                id="aegis-omnibox"
+                ref={omniboxInputRef}
+                className="omnibox-input"
+                type="text"
+                inputMode="url"
+                enterKeyHint="go"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder={`Search ${engineLabel} or type URL`}
+                value={isEditing ? draft : hostLabel}
+                onFocus={() => {
+                  onToggleMenu(false);
+                  setIsEditing(true);
+                  setDraft(activeTab.url);
+                  window.setTimeout(() => omniboxInputRef.current?.select(), 0);
                 }}
-              >
-                <StopIcon size={15} />
-              </button>
-              <button
-                type="submit"
-                className="omnibox-go-chip"
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                Go
-              </button>
-            </>
-          ) : (
-            !isInternal && (
-              <>
-                <button
-                  type="button"
-                  className="omnibox-inline-btn omnibox-bookmark-btn"
-                  data-bookmarked={isBookmarked ? 'true' : 'false'}
-                  aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
-                  title={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
-                  onClick={onToggleBookmark}
-                >
-                  <BookmarkIcon size={16} filled={isBookmarked} />
-                </button>
-                <button
-                  type="button"
-                  className="omnibox-inline-btn"
-                  aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
-                  onClick={onReloadOrStop}
-                >
-                  {activeTab.isLoading ? <StopIcon size={16} /> : <ReloadIcon size={16} />}
-                </button>
-              </>
-            )
-          )}
-        </form>
+                onBlur={() => {
+                  window.setTimeout(() => setIsEditing(false), 140);
+                }}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+
+              {isEditing && draft.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="omnibox-inline-btn"
+                    aria-label="Clear address"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setDraft('');
+                      omniboxInputRef.current?.focus();
+                    }}
+                  >
+                    <StopIcon size={15} />
+                  </button>
+                  <button
+                    type="submit"
+                    className="omnibox-go-chip"
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    Go
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="omnibox-inline-btn omnibox-bookmark-btn"
+                    data-bookmarked={isBookmarked ? 'true' : 'false'}
+                    aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+                    title={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+                    onClick={onToggleBookmark}
+                  >
+                    <BookmarkIcon size={16} filled={isBookmarked} />
+                  </button>
+                  <button
+                    type="button"
+                    className="omnibox-inline-btn"
+                    aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
+                    onClick={onReloadOrStop}
+                  >
+                    {activeTab.isLoading ? <StopIcon size={16} /> : <ReloadIcon size={16} />}
+                  </button>
+                </>
+              )}
+            </form>
+          </>
+        )}
 
         <button
           type="button"
           className="shields-btn"
           data-active={shieldsEnabledForSite ? 'true' : 'false'}
           data-pulse={pulse ? 'true' : 'false'}
-          aria-label={`Aegis Shields: ${totalBlocked} blocked`}
+          aria-label={`Aegis Shields (${totalBlocked} blocked)`}
           aria-expanded={activeDrawer === 'shields'}
           onClick={() => {
             onToggleMenu(false);
             onOpenDrawer('shields');
           }}
         >
-          <ShieldIcon size={16} />
+          <ShieldIcon size={15} />
           <span>{totalBlocked > 999 ? '999+' : totalBlocked}</span>
         </button>
 
@@ -258,7 +306,21 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
       </header>
 
-      {activeTab.isLoading && (
+      {isEditing && !isInternal && suggestions.length > 0 && (
+        <div className="omnibox-suggestions-sheet">
+          <SuggestionDropdown
+            variant="topbar"
+            suggestions={suggestions}
+            onSelect={handleSelectSuggestion}
+            onFill={(text) => {
+              setDraft(text);
+              omniboxInputRef.current?.focus();
+            }}
+          />
+        </div>
+      )}
+
+      {activeTab.isLoading && !isInternal && (
         <div
           className="loading-bar"
           role="progressbar"
@@ -392,20 +454,6 @@ export const TopBar: React.FC<TopBarProps> = ({
                 <span className="menu-badge">{activeTab.desktopMode ? 'ON' : 'OFF'}</span>
               </button>
             )}
-
-            <button
-              type="button"
-              className="menu-item"
-              onClick={() => {
-                onNavigate('aegis://player');
-                onToggleMenu(false);
-              }}
-            >
-              <span className="menu-item-left">
-                <PlayIcon size={17} />
-                <span>Stream Player</span>
-              </span>
-            </button>
 
             <button
               type="button"

@@ -22,36 +22,25 @@ export const SEARCH_ENGINES: Record<
   },
 };
 
-export function isDirectMediaStreamUrl(rawUrl: string): boolean {
-  const clean = rawUrl.trim().toLowerCase().split('?')[0].split('#')[0];
-  return clean.endsWith('.m3u8') || clean.endsWith('.mp4');
-}
-
 export function resolveOmniboxInput(
   rawInput: string,
   engine: SearchEngineId = 'duckduckgo'
 ): string {
   const trimmed = rawInput.trim();
-  if (!trimmed) return 'aegis://home';
-  if (trimmed.startsWith('aegis://')) return trimmed;
+  if (!trimmed || trimmed.startsWith('aegis://')) return 'aegis://home';
 
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
-    return isDirectMediaStreamUrl(lower)
-      ? `aegis://player?src=${encodeURIComponent(trimmed)}`
-      : trimmed;
+    return trimmed;
   }
 
   const looksLikeHost =
     !trimmed.includes(' ') &&
     (trimmed.includes('.') || lower === 'localhost' || lower.startsWith('localhost:'));
   if (looksLikeHost) {
-    const withScheme = lower.startsWith('localhost')
+    return lower.startsWith('localhost')
       ? `http://${trimmed}`
       : `https://${trimmed}`;
-    return isDirectMediaStreamUrl(withScheme)
-      ? `aegis://player?src=${encodeURIComponent(withScheme)}`
-      : withScheme;
   }
 
   const base = SEARCH_ENGINES[engine]?.template ?? SEARCH_ENGINES.duckduckgo.template;
@@ -65,7 +54,7 @@ export function formatDisplayUrl(url: string): {
 } {
   if (url.startsWith('aegis://')) {
     return {
-      hostLabel: url === 'aegis://home' ? 'Aegis Private Start' : 'Aegis Stream Player',
+      hostLabel: 'Aegis Start',
       isSecure: true,
       isInternal: true,
     };

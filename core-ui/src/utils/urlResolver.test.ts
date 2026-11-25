@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatDisplayUrl, resolveOmniboxInput } from './urlResolver';
 
 describe('urlResolver', () => {
-  it('routes direct domains, full URLs, HLS streams, and search queries accurately', () => {
+  it('routes direct domains, full URLs, media links, and search queries cleanly', () => {
     expect(resolveOmniboxInput('')).toBe('aegis://home');
     expect(resolveOmniboxInput('wikipedia.org')).toBe('https://wikipedia.org');
     expect(resolveOmniboxInput('http://localhost:8080')).toBe('http://localhost:8080');
@@ -11,14 +11,12 @@ describe('urlResolver', () => {
     );
     expect(
       resolveOmniboxInput('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8')
-    ).toBe(
-      'aegis://player?src=https%3A%2F%2Ftest-streams.mux.dev%2Fx36xhzz%2Fx36xhzz.m3u8'
-    );
+    ).toBe('https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8');
   });
 
   it('extracts security and internal flags cleanly', () => {
     expect(formatDisplayUrl('aegis://home')).toEqual({
-      hostLabel: 'Aegis Private Start',
+      hostLabel: 'Aegis Start',
       isSecure: true,
       isInternal: true,
     });

@@ -155,9 +155,6 @@ class BrowserWebViewClient(
         if (!url.isNullOrBlank()) {
             updateTrackedUrl(url)
             injectPageHelpers(view, url)
-            if (!isAutoPopupTab()) {
-                onVisitRecorded(tabId, url, view?.title, currentPageHost.get())
-            }
         }
     }
 
@@ -167,7 +164,10 @@ class BrowserWebViewClient(
         if (finalUrl.isNotBlank()) {
             updateTrackedUrl(finalUrl)
             injectPageHelpers(view, finalUrl)
-            if (!isAutoPopupTab()) {
+            if (!isAutoPopupTab() &&
+                !AdBlockEngine.isSuspiciousAdRedirectUrl(finalUrl.lowercase()) &&
+                !adBlockEngine.evaluateNavigation(finalUrl, null, false).blocked
+            ) {
                 onVisitRecorded(tabId, finalUrl, view?.title, currentPageHost.get())
             }
         }

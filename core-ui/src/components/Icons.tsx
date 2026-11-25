@@ -16,17 +16,17 @@ export const AegisCrest: React.FC<IconProps> = ({ size = 44, className }) => (
   >
     <path
       d="M32 5L54 14V31C54 45.2 44.6 56.8 32 61C19.4 56.8 10 45.2 10 31V14L32 5Z"
-      fill="#161C26"
-      stroke="rgba(255,255,255,0.14)"
+      fill="var(--bg-elevated)"
+      stroke="var(--border-strong)"
       strokeWidth="2"
     />
     <path
       d="M32 11L48 17.6V31C48 41.7 41.1 50.6 32 54.4C22.9 50.6 16 41.7 16 31V17.6L32 11Z"
-      fill="#FF6B2B"
+      fill="var(--accent)"
     />
     <path
       d="M32 20L40.5 42H35.5L33.8 37.2H30.2L28.5 42H23.5L32 20ZM31.1 33.2H32.9L32 27.3L31.1 33.2Z"
-      fill="#0B0E14"
+      fill="var(--accent-ink)"
     />
   </svg>
 );

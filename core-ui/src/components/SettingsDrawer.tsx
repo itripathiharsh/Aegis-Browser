@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { BrowserSettings, SearchEngineId } from '../adblock/types';
+import type { BrowserSettings, SearchEngineId, ThemeMode } from '../adblock/types';
 import { SEARCH_ENGINES } from '../utils/urlResolver';
 
 interface SettingsDrawerProps {
@@ -39,6 +39,13 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     });
   };
 
+  const setTheme = (theme: ThemeMode) => {
+    onUpdateSettings({
+      ...settings,
+      theme,
+    });
+  };
+
   return (
     <div
       className="drawer-backdrop"
@@ -61,9 +68,38 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 
         <div className="panel-card">
           <div className="row-title" style={{ marginBottom: '0.5rem' }}>
+            Appearance Theme
+          </div>
+          <div className="segmented-two" role="group" aria-label="Appearance theme">
+            <button
+              type="button"
+              className="segmented-btn"
+              aria-pressed={settings.theme === 'dark'}
+              onClick={() => setTheme('dark')}
+            >
+              Dark Mode
+            </button>
+            <button
+              type="button"
+              className="segmented-btn"
+              aria-pressed={settings.theme === 'light'}
+              onClick={() => setTheme('light')}
+            >
+              Light Mode
+            </button>
+          </div>
+        </div>
+
+        <div className="panel-card">
+          <div className="row-title" style={{ marginBottom: '0.5rem' }}>
             Default Search Engine
           </div>
-          <div className="engine-strip" role="group" aria-label="Default search engine" style={{ justifyContent: 'flex-start' }}>
+          <div
+            className="engine-strip"
+            role="group"
+            aria-label="Default search engine"
+            style={{ justifyContent: 'flex-start' }}
+          >
             {ENGINE_ORDER.map((id) => (
               <button
                 key={id}
@@ -85,7 +121,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Recommended Sites</div>
-              <div className="row-meta">Show top visited websites on the Start page</div>
+              <div className="row-meta">Show frequently visited sites on Start page</div>
             </div>
             <button
               type="button"
@@ -98,7 +134,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Desktop Mode by Default</div>
-              <div className="row-meta">Request desktop layouts for newly opened tabs</div>
+              <div className="row-meta">Request desktop pages in new tabs</div>
             </div>
             <button
               type="button"
@@ -130,7 +166,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Save Browsing History</div>
-              <div className="row-meta">Log visited sites for History & Recommendations</div>
+              <div className="row-meta">Enable History & search autocomplete</div>
             </div>
             <button
               type="button"
@@ -143,7 +179,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Daily Ad-Filter Auto-Sync</div>
-              <div className="row-meta">Keep 52,000+ filter rules fresh in the background</div>
+              <div className="row-meta">Keep 52,000+ filter rules fresh daily</div>
             </div>
             <button
               type="button"

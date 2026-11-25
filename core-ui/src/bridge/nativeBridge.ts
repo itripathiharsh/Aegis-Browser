@@ -31,6 +31,7 @@ interface AndroidNativeHost extends WebOSNativeHost {
   getHistory?(): string;
   deleteHistoryItem?(id: string): void;
   clearHistory?(): void;
+  dismissRecommendation?(host: string): void;
   getDownloads?(): string;
   openSystemDownloads?(): void;
   removeDownload?(id: string): void;
@@ -78,6 +79,7 @@ export interface BrowserBridge {
   getHistory(): HistoryEntry[];
   deleteHistoryItem(id: string): void;
   clearHistory(): void;
+  dismissRecommendation(host: string): void;
   getDownloads(): DownloadRecord[];
   openSystemDownloads(): void;
   removeDownload(id: string): void;
@@ -118,6 +120,7 @@ const DEFAULT_UPDATE_STATE: AppUpdateState = {
 
 export const DEFAULT_SETTINGS = {
   searchEngine: 'duckduckgo' as const,
+  theme: 'dark' as const,
   blockThirdPartyCookies: true,
   defaultDesktopMode: false,
   showRecommendations: true,
@@ -290,6 +293,15 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
     }
   }
 
+  dismissRecommendation(host: string): void {
+    if (
+      'dismissRecommendation' in this.host &&
+      typeof this.host.dismissRecommendation === 'function'
+    ) {
+      this.host.dismissRecommendation(host);
+    }
+  }
+
   getDownloads(): DownloadRecord[] {
     if ('getDownloads' in this.host && typeof this.host.getDownloads === 'function') {
       try {
@@ -449,12 +461,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       return {
         ...t,
         url: resolved,
-        title:
-          resolved === 'aegis://home'
-            ? 'Aegis Start'
-            : resolved.startsWith('aegis://player')
-              ? 'Aegis Stream Player'
-              : host ?? resolved,
+        title: resolved === 'aegis://home' ? 'Aegis Start' : host ?? resolved,
         canGoBack: resolved !== 'aegis://home',
         isLoading: false,
         progress: 100,
@@ -505,16 +512,20 @@ class StandalonePreviewBridge implements BrowserBridge {
           ...this.history,
         ].slice(0, 200);
       }
-      const isSerp =
-        (host.includes('duckduckgo.com') && resolved.includes('?q=')) ||
-        (host.includes('search.brave.com') && resolved.includes('?q=')) ||
-        (host.includes('google.') && resolved.includes('/search')) ||
-        (host.includes('startpage.com') && resolved.includes('/search'));
-      if (!isSerp) {
+      const cleanHost = host.replace(/^www\./, '').toLowerCase();
+      const isExcludedHost =
+        cleanHost === 'duckduckgo.com' ||
+        cleanHost === 'search.brave.com' ||
+        cleanHost === 'brave.com' ||
+        cleanHost.startsWith('google.') ||
+        cleanHost === 'startpage.com' ||
+        cleanHost === 'bing.com' ||
+        /^(new\d+|ad\d*|ads\d*|pop\d*|redir\d*|clk\d*|trk\d*)\./.test(cleanHost);
+      if (!isExcludedHost) {
         const prev = this.recMap.get(host);
         this.recMap.set(host, {
           url: resolved.length <= 90 ? resolved : `https://${host}/`,
-          title: host.replace(/^www\./, ''),
+          title: cleanHost,
           host,
           visits: (prev?.visits ?? 0) + 1,
           lastVisitedMs: now,
@@ -667,6 +678,12 @@ class StandalonePreviewBridge implements BrowserBridge {
     this.history = [];
     this.recMap.clear();
     this.state = { ...this.state, recommendations: [] };
+    this.emit();
+  }
+
+  dismissRecommendation(host: string): void {
+    this.recMap.delete(host);
+    this.state = { ...this.state, recommendations: this.buildPreviewRecommendations() };
     this.emit();
   }
 

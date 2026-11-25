@@ -17,7 +17,6 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { HomeStartPage } from './components/HomeStartPage';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { ShieldsPanel } from './components/ShieldsPanel';
-import { StreamPlayerView } from './components/StreamPlayerView';
 import { TabsDrawer } from './components/TabsDrawer';
 import { TopBar, type DrawerKind } from './components/TopBar';
 import { UpdateModal } from './components/UpdateModal';
@@ -25,6 +24,7 @@ import { useDpadNavigation } from './hooks/useDpadNavigation';
 
 const BOOKMARKS_STORAGE_KEY = 'aegis_bookmarks_v2';
 const ENGINE_STORAGE_KEY = 'aegis_search_engine_v1';
+const THEME_STORAGE_KEY = 'aegis_theme_v1';
 
 const DEFAULT_BOOKMARKS: BookmarkItem[] = [
   {
@@ -62,13 +62,6 @@ const DEFAULT_BOOKMARKS: BookmarkItem[] = [
     tag: 'News',
     pinned: true,
   },
-  {
-    id: 'bm-hls',
-    title: 'Stream Player',
-    url: 'aegis://player',
-    tag: 'Video',
-    pinned: true,
-  },
 ];
 
 function loadBookmarks(): BookmarkItem[] {
@@ -76,7 +69,10 @@ function loadBookmarks(): BookmarkItem[] {
     const raw = localStorage.getItem(BOOKMARKS_STORAGE_KEY);
     if (!raw) return DEFAULT_BOOKMARKS;
     const parsed = JSON.parse(raw) as BookmarkItem[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_BOOKMARKS;
+    if (!Array.isArray(parsed)) return DEFAULT_BOOKMARKS;
+    // Strip legacy internal Stream Player entries on upgrade
+    const filtered = parsed.filter((b) => !b.url?.startsWith('aegis://player'));
+    return filtered.length > 0 ? filtered : DEFAULT_BOOKMARKS;
   } catch {
     return DEFAULT_BOOKMARKS;
   }
@@ -100,10 +96,15 @@ export const App: React.FC = () => {
   );
   const [activeDrawer, setActiveDrawer] = useState<DrawerKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [omniboxSuggestionsOpen, setOmniboxSuggestionsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<FilterSyncResult | null>(null);
-  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  const [downloadRecords, setDownloadRecords] = useState<DownloadRecord[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(() =>
+    bridge.getHistory()
+  );
+  const [downloadRecords, setDownloadRecords] = useState<DownloadRecord[]>(() =>
+    bridge.getDownloads()
+  );
 
   const barRef = useRef<HTMLDivElement>(null);
   const omniboxInputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +118,15 @@ export const App: React.FC = () => {
     [localEngine, state.searchEngine, state.settings]
   );
   const searchEngine: SearchEngineId = settings.searchEngine;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, settings.theme);
+    } catch {
+      // Ignore storage quota issues
+    }
+  }, [settings.theme]);
 
   useEffect(() => {
     const unsubState = bridge.subscribe((next) => {
@@ -142,13 +152,14 @@ export const App: React.FC = () => {
   const overlayExpanded =
     activeDrawer !== null ||
     menuOpen ||
+    omniboxSuggestionsOpen ||
     isInternalPage ||
     state.appUpdate.popupVisible;
 
   useEffect(() => {
     const reportSize = () => {
       const barEl = barRef.current;
-      const cssHeight = barEl ? barEl.getBoundingClientRect().height : 56;
+      const cssHeight = barEl ? barEl.getBoundingClientRect().height : 52;
       const physicalPx = Math.ceil(cssHeight * (window.devicePixelRatio || 1));
       bridge.setOverlayExpanded(overlayExpanded, physicalPx);
     };
@@ -165,6 +176,8 @@ export const App: React.FC = () => {
     window.__AEGIS_CLOSE_OVERLAY__ = () => {
       setMenuOpen(false);
       setActiveDrawer(null);
+      setOmniboxSuggestionsOpen(false);
+      omniboxInputRef.current?.blur();
     };
     window.__AEGIS_FOCUS_OMNIBOX__ = () => {
       omniboxInputRef.current?.focus();
@@ -173,10 +186,11 @@ export const App: React.FC = () => {
     const unsubWebOS = registerWebOSBackHandler(() => {
       if (menuOpen) setMenuOpen(false);
       else if (activeDrawer !== null) setActiveDrawer(null);
+      else if (omniboxSuggestionsOpen) omniboxInputRef.current?.blur();
       else bridge.goBack(activeTab.id);
     });
     return () => unsubWebOS();
-  }, [activeDrawer, activeTab.id, bridge, menuOpen]);
+  }, [activeDrawer, activeTab.id, bridge, menuOpen, omniboxSuggestionsOpen]);
 
   const handleBackKey = useCallback(() => {
     if (state.appUpdate.popupVisible) {
@@ -185,10 +199,20 @@ export const App: React.FC = () => {
       setMenuOpen(false);
     } else if (activeDrawer !== null) {
       setActiveDrawer(null);
+    } else if (omniboxSuggestionsOpen) {
+      omniboxInputRef.current?.blur();
     } else if (!isInternalPage) {
       bridge.goBack(activeTab.id);
     }
-  }, [activeDrawer, activeTab.id, bridge, isInternalPage, menuOpen, state.appUpdate.popupVisible]);
+  }, [
+    activeDrawer,
+    activeTab.id,
+    bridge,
+    isInternalPage,
+    menuOpen,
+    omniboxSuggestionsOpen,
+    state.appUpdate.popupVisible,
+  ]);
 
   useDpadNavigation({
     onBack: handleBackKey,
@@ -206,7 +230,7 @@ export const App: React.FC = () => {
 
   const addBookmarkItem = (title: string, url: string) => {
     const cleanUrl = url.trim();
-    if (!cleanUrl) return;
+    if (!cleanUrl || cleanUrl.startsWith('aegis://')) return;
     if (bookmarks.some((b) => b.url === cleanUrl)) return;
     persistBookmarks([
       {
@@ -219,18 +243,26 @@ export const App: React.FC = () => {
     ]);
   };
 
+  // Keep historyEntries synchronized so autocomplete on both Home and TopBar stays instant
   useEffect(() => {
-    if (activeDrawer === 'history') {
-      setHistoryEntries(bridge.getHistory());
-    } else if (activeDrawer === 'downloads') {
+    setHistoryEntries(bridge.getHistory());
+    if (activeDrawer === 'downloads') {
       setDownloadRecords(bridge.getDownloads());
     }
-  }, [activeDrawer, bridge, state.downloadsSummary?.activeCount, state.downloadsSummary?.totalCount, activeTab.url]);
+  }, [
+    activeDrawer,
+    bridge,
+    state.downloadsSummary?.activeCount,
+    state.downloadsSummary?.totalCount,
+    activeTab.url,
+    activeTab.isLoading,
+  ]);
 
   const handleUpdateSettings = (next: BrowserSettings) => {
     setLocalEngine(next.searchEngine);
     try {
       localStorage.setItem(ENGINE_STORAGE_KEY, next.searchEngine);
+      localStorage.setItem(THEME_STORAGE_KEY, next.theme);
     } catch {
       // Ignore
     }
@@ -267,11 +299,14 @@ export const App: React.FC = () => {
         shieldsEnabledForSite={shieldsEnabledForSite}
         isBookmarked={isBookmarked}
         searchEngine={searchEngine}
+        historyEntries={historyEntries}
+        bookmarks={bookmarks}
         activeDrawer={activeDrawer}
         menuOpen={menuOpen}
         omniboxInputRef={omniboxInputRef}
         barRef={barRef}
         onToggleMenu={setMenuOpen}
+        onSuggestionsVisibleChange={setOmniboxSuggestionsOpen}
         onNavigate={(raw) => bridge.navigate(activeTab.id, raw, searchEngine)}
         onBack={() => bridge.goBack(activeTab.id)}
         onForward={() => bridge.goForward(activeTab.id)}
@@ -288,10 +323,11 @@ export const App: React.FC = () => {
         onOpenDrawer={(d) => setActiveDrawer((cur) => (cur === d ? null : d))}
       />
 
-      {activeTab.url === 'aegis://home' && (
+      {isInternalPage && (
         <HomeStartPage
           state={state}
           bookmarks={bookmarks}
+          historyEntries={historyEntries}
           searchEngine={searchEngine}
           onChangeEngine={handleChangeEngine}
           onOpenUrl={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
@@ -299,19 +335,12 @@ export const App: React.FC = () => {
           onRemoveFavorite={(id) =>
             persistBookmarks(bookmarks.filter((b) => b.id !== id))
           }
+          onDismissRecommendation={(host) => bridge.dismissRecommendation(host)}
           onOpenShields={() => setActiveDrawer('shields')}
           onOpenBookmarks={() => setActiveDrawer('bookmarks')}
           onOpenHistory={() => setActiveDrawer('history')}
           onOpenDownloads={() => setActiveDrawer('downloads')}
           onOpenSettings={() => setActiveDrawer('settings')}
-        />
-      )}
-
-      {activeTab.url.startsWith('aegis://player') && (
-        <StreamPlayerView
-          url={activeTab.url}
-          onBackHome={() => bridge.navigate(activeTab.id, 'aegis://home', searchEngine)}
-          onOpenStreamUrl={(u) => bridge.navigate(activeTab.id, u, searchEngine)}
         />
       )}
 

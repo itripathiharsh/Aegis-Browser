@@ -1,11 +1,13 @@
 package com.aegis.browser.browser
 
 import android.content.Context
+import com.aegis.browser.adblock.AdBlockEngine
 import org.json.JSONArray
 import org.json.JSONObject
 
 data class BrowserSettings(
     val searchEngine: String = "duckduckgo",
+    val theme: String = "dark",
     val blockThirdPartyCookies: Boolean = true,
     val defaultDesktopMode: Boolean = false,
     val showRecommendations: Boolean = true,
@@ -14,6 +16,7 @@ data class BrowserSettings(
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("searchEngine", searchEngine)
+        put("theme", theme)
         put("blockThirdPartyCookies", blockThirdPartyCookies)
         put("defaultDesktopMode", defaultDesktopMode)
         put("showRecommendations", showRecommendations)
@@ -68,7 +71,8 @@ class BrowserDataStore(context: Context) {
 
     fun updateSettings(next: BrowserSettings): BrowserSettings = synchronized(lock) {
         val cleanEngine = TabManager.normalizeEngine(next.searchEngine)
-        settings = next.copy(searchEngine = cleanEngine)
+        val cleanTheme = normalizeTheme(next.theme)
+        settings = next.copy(searchEngine = cleanEngine, theme = cleanTheme)
         prefs.edit()
             .putString(KEY_SETTINGS, settings.toJson().toString())
             .apply()
@@ -82,7 +86,12 @@ class BrowserDataStore(context: Context) {
         updateSettings(settings.copy(searchEngine = TabManager.normalizeEngine(engineId)))
     }
 
-    fun recordVisit(url: String, rawTitle: String?, host: String?) {
+    fun recordVisit(
+        url: String,
+        rawTitle: String?,
+        host: String?,
+        allowRecommendation: Boolean = true
+    ) {
         if (!url.startsWith("http://") && !url.startsWith("https://")) return
         val cleanHost = host?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return
         val cleanTitle = rawTitle?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("http") }
@@ -115,10 +124,14 @@ class BrowserDataStore(context: Context) {
                 persistHistoryLocked()
             }
 
-            // Do not pollute Recommendations with search-engine SERP URLs
-            if (!isSearchResultHost(cleanHost, url)) {
+            // Never pollute Recommendations with search engines, popup redirects, or ad-mirror hosts
+            if (allowRecommendation && !isExcludedFromRecommendations(cleanHost, url)) {
                 val prev = recommendations[cleanHost]
-                val nextVisits = (prev?.visits ?: 0) + 1
+                val nextVisits = if (prev != null && (now - prev.lastVisitedMs) < 15_000L) {
+                    prev.visits
+                } else {
+                    (prev?.visits ?: 0) + 1
+                }
                 val canonicalUrl = if (url.length <= 90) url else "https://$cleanHost/"
                 recommendations[cleanHost] = RecommendedSite(
                     url = canonicalUrl,
@@ -178,6 +191,16 @@ class BrowserDataStore(context: Context) {
         }
     }
 
+    fun dismissRecommendation(host: String) {
+        val clean = host.trim().lowercase()
+        if (clean.isEmpty()) return
+        synchronized(lock) {
+            if (recommendations.remove(clean) != null) {
+                persistRecommendationsLocked()
+            }
+        }
+    }
+
     fun clearHistoryAndRecommendations() {
         synchronized(lock) {
             history.clear()
@@ -189,12 +212,19 @@ class BrowserDataStore(context: Context) {
         }
     }
 
-    private fun isSearchResultHost(host: String, url: String): Boolean {
-        val lower = url.lowercase()
-        return (host.contains("duckduckgo.com") && lower.contains("?q=")) ||
-            (host.contains("search.brave.com") && lower.contains("?q=")) ||
-            (host.contains("google.") && lower.contains("/search")) ||
-            (host.contains("startpage.com") && lower.contains("/search"))
+    private fun isExcludedFromRecommendations(host: String, url: String): Boolean {
+        val clean = host.trim().lowercase().removePrefix("www.")
+        val base = AdBlockEngine.registrableDomain(clean)
+        if (base in SEARCH_ENGINE_BASES ||
+            clean == "search.brave.com" ||
+            clean.startsWith("google.") ||
+            clean.startsWith("yandex.")
+        ) {
+            return true
+        }
+        if (clean == "localhost" || RAW_IP_REGEX.matches(clean)) return true
+        if (SUSPICIOUS_REC_SUBDOMAIN_REGEX.containsMatchIn(clean)) return true
+        return AdBlockEngine.isSuspiciousAdRedirectUrl(url.lowercase())
     }
 
     private fun persistHistoryLocked() {
@@ -219,6 +249,7 @@ class BrowserDataStore(context: Context) {
             val obj = JSONObject(raw)
             BrowserSettings(
                 searchEngine = TabManager.normalizeEngine(obj.optString("searchEngine", fallbackEngine)),
+                theme = normalizeTheme(obj.optString("theme", "dark")),
                 blockThirdPartyCookies = obj.optBoolean("blockThirdPartyCookies", true),
                 defaultDesktopMode = obj.optBoolean("defaultDesktopMode", false),
                 showRecommendations = obj.optBoolean("showRecommendations", true),
@@ -235,15 +266,18 @@ class BrowserDataStore(context: Context) {
             val arr = JSONArray(raw)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                list.add(
-                    HistoryEntry(
-                        id = o.optString("id"),
-                        url = o.optString("url"),
-                        title = o.optString("title"),
-                        host = o.optString("host"),
-                        visitedAtMs = o.optLong("visitedAtMs", 0L)
+                val entryUrl = o.optString("url")
+                if (!entryUrl.startsWith("aegis://player")) {
+                    list.add(
+                        HistoryEntry(
+                            id = o.optString("id"),
+                            url = entryUrl,
+                            title = o.optString("title"),
+                            host = o.optString("host"),
+                            visitedAtMs = o.optLong("visitedAtMs", 0L)
+                        )
                     )
-                )
+                }
             }
         }
         return list
@@ -252,21 +286,30 @@ class BrowserDataStore(context: Context) {
     private fun loadRecommendationsInternal(): MutableMap<String, RecommendedSite> {
         val raw = prefs.getString(KEY_RECS, null) ?: return linkedMapOf()
         val map = linkedMapOf<String, RecommendedSite>()
+        var pruned = false
         runCatching {
             val arr = JSONArray(raw)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val host = o.optString("host")
-                if (host.isNotBlank()) {
+                val host = o.optString("host").trim().lowercase()
+                val recUrl = o.optString("url")
+                if (host.isNotBlank() && !isExcludedFromRecommendations(host, recUrl)) {
                     map[host] = RecommendedSite(
-                        url = o.optString("url"),
+                        url = recUrl,
                         title = o.optString("title"),
                         host = host,
                         visits = o.optInt("visits", 1),
                         lastVisitedMs = o.optLong("lastVisitedMs", 0L)
                     )
+                } else if (host.isNotBlank()) {
+                    pruned = true
                 }
             }
+        }
+        if (pruned) {
+            val cleanedArr = JSONArray()
+            map.values.forEach { cleanedArr.put(it.toJson()) }
+            prefs.edit().putString(KEY_RECS, cleanedArr.toString()).apply()
         }
         return map
     }
@@ -277,5 +320,28 @@ class BrowserDataStore(context: Context) {
         private const val KEY_RECS = "recommendations_v1"
         private const val MAX_HISTORY = 200
         private const val MAX_REC_HOSTS = 40
+
+        private val SEARCH_ENGINE_BASES = setOf(
+            "duckduckgo.com",
+            "brave.com",
+            "google.com",
+            "startpage.com",
+            "bing.com",
+            "yahoo.com",
+            "yandex.ru",
+            "yandex.com",
+            "ecosia.org",
+            "qwant.com",
+            "baidu.com",
+            "ask.com"
+        )
+
+        private val SUSPICIOUS_REC_SUBDOMAIN_REGEX = Regex(
+            "^(new\\d+|ad\\d*|ads\\d*|pop\\d*|popunder\\d*|clk\\d*|trk\\d*|track\\d*|redir\\d*|redirect\\d*|promo\\d*|aff\\d*)\\."
+        )
+        private val RAW_IP_REGEX = Regex("^\\d+\\.\\d+\\.\\d+\\.\\d+$")
+
+        fun normalizeTheme(raw: String?): String =
+            if (raw?.trim()?.lowercase() == "light") "light" else "dark"
     }
 }

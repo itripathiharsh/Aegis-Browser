@@ -203,7 +203,7 @@ class TabManager(
         if (resolved.startsWith("aegis://")) {
             tab.isLoading = false
             tab.progress = 100
-            tab.title = if (resolved.startsWith("aegis://player")) "Aegis Video Player" else "Aegis Start"
+            tab.title = "Aegis Start"
             tab.webView?.visibility = View.GONE
             tab.webView?.onPause()
             onTabsUpdated()
@@ -282,6 +282,13 @@ class TabManager(
         }
     }
 
+    fun applyThemeToAllTabs(theme: String) {
+        val bgColor = if (theme == "light") Color.parseColor("#F5F6F8") else Color.parseColor("#0F1115")
+        getTabs().forEach { tab ->
+            tab.webView?.setBackgroundColor(bgColor)
+        }
+    }
+
     fun clearAllCachesAndCookies() {
         runCatching {
             CookieManager.getInstance().removeAllCookies(null)
@@ -351,7 +358,8 @@ class TabManager(
     @SuppressLint("SetJavaScriptEnabled")
     private fun createContentWebView(tab: TabSession): WebView {
         val wv = WebView(context)
-        wv.setBackgroundColor(Color.parseColor("#0B0E14"))
+        val initialBg = if (dataStore.getSettings().theme == "light") "#F5F6F8" else "#0F1115"
+        wv.setBackgroundColor(Color.parseColor(initialBg))
         wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         wv.isFocusable = true
         wv.isFocusableInTouchMode = true
@@ -403,8 +411,15 @@ class TabManager(
             },
             onVisitRecorded = { id, visitedUrl, pageTitle, host ->
                 val target = synchronized(tabsLock) { tabs.find { it.id == id } }
-                if (target != null && !target.isInternalPage) {
-                    dataStore.recordVisit(visitedUrl, pageTitle ?: target.title, host)
+                if (target != null && !target.isInternalPage && !target.isAutoPopup && target.openerTabId == null) {
+                    val safeForRec = !adBlockEngine.evaluateNavigation(visitedUrl, null, false).blocked &&
+                        !AdBlockEngine.isSuspiciousAdRedirectUrl(visitedUrl.lowercase())
+                    dataStore.recordVisit(
+                        url = visitedUrl,
+                        rawTitle = pageTitle ?: target.title,
+                        host = host,
+                        allowRecommendation = safeForRec
+                    )
                 }
             },
             onStateChanged = { id, updatedUrl, loading, canBack, canForward ->
@@ -537,37 +552,22 @@ class TabManager(
 
         fun resolveUserInput(raw: String, engineId: String = "duckduckgo"): String {
             val trimmed = raw.trim()
-            if (trimmed.isEmpty()) return "aegis://home"
-            if (trimmed.startsWith("aegis://")) return trimmed
+            if (trimmed.isEmpty() || trimmed.startsWith("aegis://")) return "aegis://home"
 
             val lower = trimmed.lowercase()
             if (lower.startsWith("http://") || lower.startsWith("https://")) {
-                return if (isDirectStreamUrl(lower)) {
-                    "aegis://player?src=" + Uri.encode(trimmed)
-                } else {
-                    trimmed
-                }
+                return trimmed
             }
 
             val looksLikeHost = !trimmed.contains(' ') &&
                 (trimmed.contains('.') || lower == "localhost" || lower.startsWith("localhost:"))
             if (looksLikeHost) {
-                val url = if (lower.startsWith("localhost")) "http://$trimmed" else "https://$trimmed"
-                return if (isDirectStreamUrl(url.lowercase())) {
-                    "aegis://player?src=" + Uri.encode(url)
-                } else {
-                    url
-                }
+                return if (lower.startsWith("localhost")) "http://$trimmed" else "https://$trimmed"
             }
 
             val template = ENGINE_TEMPLATES[normalizeEngine(engineId)] ?: ENGINE_TEMPLATES.getValue("duckduckgo")
             val encoded = URLEncoder.encode(trimmed, "UTF-8")
             return "$template$encoded"
-        }
-
-        private fun isDirectStreamUrl(lowerUrl: String): Boolean {
-            val clean = lowerUrl.substringBefore('?').substringBefore('#')
-            return clean.endsWith(".m3u8") || clean.endsWith(".mp4")
         }
     }
 }

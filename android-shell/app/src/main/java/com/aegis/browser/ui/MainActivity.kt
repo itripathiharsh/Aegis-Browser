@@ -82,14 +82,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, true)
-        @Suppress("DEPRECATION")
-        window.statusBarColor = Color.parseColor("#0B0E14")
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.parseColor("#0B0E14")
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
 
         lastBarHeightPx = dpToPx(54)
 
@@ -97,6 +89,17 @@ class MainActivity : AppCompatActivity() {
         adBlockEngine.updateConfig(loadShieldsConfig())
         filterUpdater = FilterListUpdater(applicationContext, adBlockEngine)
         dataStore = BrowserDataStore(applicationContext)
+        val initialTheme = dataStore.getSettings().theme
+        val initialBg = Color.parseColor(if (initialTheme == "light") "#F5F6F8" else "#0F1115")
+
+        @Suppress("DEPRECATION")
+        window.statusBarColor = initialBg
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = initialBg
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = initialTheme == "light"
+            isAppearanceLightNavigationBars = initialTheme == "light"
+        }
 
         // Compile 52,000+ bundled rules off the main thread so cold launch feels instant
         scope.launch {
@@ -248,8 +251,13 @@ class MainActivity : AppCompatActivity() {
                         null
                     )
                 }
+            },
+            onThemeChanged = { theme ->
+                applySystemTheme(theme)
             }
         )
+
+        applySystemTheme(dataStore.getSettings().theme)
 
         tabManager.ensureInitialTab()
         configureChromeUiWebView()
@@ -478,6 +486,24 @@ class MainActivity : AppCompatActivity() {
             .putBoolean("cosmetic_filtering", cfg.cosmeticFiltering)
             .putString("disabled_hosts", arr.toString())
             .apply()
+    }
+
+    private fun applySystemTheme(theme: String) {
+        val isLight = theme == "light"
+        val bgColor = Color.parseColor(if (isLight) "#F5F6F8" else "#0F1115")
+        @Suppress("DEPRECATION")
+        window.statusBarColor = bgColor
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = bgColor
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = isLight
+            isAppearanceLightNavigationBars = isLight
+        }
+        if (::rootFrame.isInitialized) rootFrame.setBackgroundColor(bgColor)
+        if (::browserStack.isInitialized) browserStack.setBackgroundColor(bgColor)
+        if (::chromeUiWebView.isInitialized) chromeUiWebView.setBackgroundColor(bgColor)
+        if (::contentContainer.isInitialized) contentContainer.setBackgroundColor(bgColor)
+        if (::tabManager.isInitialized) tabManager.applyThemeToAllTabs(theme)
     }
 
     private fun dpToPx(dp: Int): Int =

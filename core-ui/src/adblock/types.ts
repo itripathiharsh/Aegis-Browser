@@ -102,8 +102,11 @@ export interface TelemetrySnapshot {
   recentEvents: BlockedEvent[];
 }
 
+export type ThemeMode = 'dark' | 'light';
+
 export interface BrowserSettings {
   searchEngine: SearchEngineId;
+  theme: ThemeMode;
   blockThirdPartyCookies: boolean;
   defaultDesktopMode: boolean;
   showRecommendations: boolean;

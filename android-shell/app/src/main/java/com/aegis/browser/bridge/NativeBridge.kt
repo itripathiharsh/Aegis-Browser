@@ -28,7 +28,8 @@ class NativeBridge(
     private val saveShieldsConfig: (ShieldsConfig) -> Unit,
     private val onLayoutModeChanged: (expanded: Boolean, barHeightPx: Int) -> Unit,
     private val onPushStateToUi: () -> Unit,
-    private val onFilterSyncCompleted: (String) -> Unit
+    private val onFilterSyncCompleted: (String) -> Unit,
+    private val onThemeChanged: (String) -> Unit = {}
 ) {
 
     @JavascriptInterface
@@ -92,15 +93,17 @@ class NativeBridge(
             val cur = dataStore.getSettings()
             val next = BrowserSettings(
                 searchEngine = obj.optString("searchEngine", cur.searchEngine),
+                theme = obj.optString("theme", cur.theme),
                 blockThirdPartyCookies = obj.optBoolean("blockThirdPartyCookies", cur.blockThirdPartyCookies),
                 defaultDesktopMode = obj.optBoolean("defaultDesktopMode", cur.defaultDesktopMode),
                 showRecommendations = obj.optBoolean("showRecommendations", cur.showRecommendations),
                 autoSyncFilters = obj.optBoolean("autoSyncFilters", cur.autoSyncFilters),
                 saveHistory = obj.optBoolean("saveHistory", cur.saveHistory)
             )
-            dataStore.updateSettings(next)
+            val saved = dataStore.updateSettings(next)
             runOnUi {
                 tabManager.applyCookiePolicyToAllTabs()
+                onThemeChanged(saved.theme)
                 onPushStateToUi()
             }
         }
@@ -198,6 +201,12 @@ class NativeBridge(
     @JavascriptInterface
     fun clearHistory() {
         dataStore.clearHistoryAndRecommendations()
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun dismissRecommendation(host: String) {
+        dataStore.dismissRecommendation(host)
         runOnUi { onPushStateToUi() }
     }
 
