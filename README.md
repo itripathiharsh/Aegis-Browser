@@ -26,7 +26,9 @@
 
 > **[⬇️ Download Latest APK](https://github.com/itripathiharsh/Aegis-Browser/releases/latest)**
 >
-> Go to **Releases → Assets → `AegisBrowser-vX.X.X.apk`** and install on your Android device.
+> Go to **Releases → Assets → `AegisBrowser-vX.X.X.apk`** and install on your Android device (Package ID: `io.github.itripathiharsh.aegis`).
+>
+> **Note for Sideloading:** If Google Play Protect prompts *"Unrecognized developer"* or *"This app may be harmful"* on a fresh GitHub APK install, tap **More details → Install anyway**. In-app self-updates also require granting *"Install unknown apps"* once.
 
 ---
 

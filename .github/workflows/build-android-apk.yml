@@ -30,7 +30,7 @@ jobs:
           RAW="${{ github.event.inputs.version || github.ref_name }}"
           VERSION="${RAW#v}"
           if [[ -z "$VERSION" || "$VERSION" == "${{ github.ref_name }}" && "$VERSION" != v* ]]; then
-            VERSION="1.0.0"
+            VERSION="1.0.1"
           fi
           CODE=$(echo "$VERSION" | awk -F. '{printf "%d%03d%03d", $1, $2, $3}')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -47,6 +47,9 @@ jobs:
 
       - name: Install, test, and build core-ui
         working-directory: core-ui
+        env:
+          VITE_AEGIS_GITHUB_REPO: ${{ github.repository }}
+          VITE_AEGIS_APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           npm ci
           npm test

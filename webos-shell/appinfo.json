@@ -1,6 +1,6 @@
 {
-  "id": "com.aegis.browser",
-  "version": "1.0.0",
+  "id": "io.github.itripathiharsh.aegis",
+  "version": "1.0.1",
   "vendor": "Aegis Open Source",
   "type": "web",
   "main": "index.html",

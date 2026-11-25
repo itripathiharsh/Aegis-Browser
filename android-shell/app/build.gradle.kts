@@ -14,13 +14,13 @@ val aegisGithubRepo = providers.gradleProperty("aegisGithubRepo")
 
 val aegisVersionName = providers.gradleProperty("aegisVersionName")
     .orElse(providers.environmentVariable("AEGIS_VERSION_NAME"))
-    .orElse("1.0.0")
+    .orElse("1.0.1")
     .get()
 
 val aegisVersionCode = providers.gradleProperty("aegisVersionCode")
     .orElse(providers.environmentVariable("AEGIS_VERSION_CODE"))
-    .map { it.toIntOrNull() ?: 1 }
-    .orElse(1)
+    .map { it.toIntOrNull() ?: 1000001 }
+    .orElse(1000001)
     .get()
 
 android {
@@ -28,7 +28,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.aegis.browser"
+        applicationId = "io.github.itripathiharsh.aegis"
         minSdk = 24
         targetSdk = 35
         versionCode = aegisVersionCode
@@ -55,6 +55,9 @@ android {
                 ?: "aegis-release"
             keyPassword = System.getenv("AEGIS_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
                 ?: "aegis-open-source"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
