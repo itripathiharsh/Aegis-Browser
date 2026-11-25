@@ -9,24 +9,18 @@ export const NivrokCrest: React.FC<IconProps> = ({ size = 44, className }) => (
   <svg
     width={size}
     height={size}
-    viewBox="0 0 64 64"
+    viewBox="0 0 1320 1320"
     fill="none"
     aria-hidden="true"
     className={className}
   >
     <path
-      d="M32 5L54 14V31C54 45.2 44.6 56.8 32 61C19.4 56.8 10 45.2 10 31V14L32 5Z"
-      fill="var(--bg-elevated)"
-      stroke="var(--border-strong)"
-      strokeWidth="2"
+      d="M330 82H990L1238 330V990L990 1238H330L82 990V330Z"
+      fill="#FF4F00"
     />
     <path
-      d="M32 11L48 17.6V31C48 41.7 41.1 50.6 32 54.4C22.9 50.6 16 41.7 16 31V17.6L32 11Z"
-      fill="var(--accent)"
-    />
-    <path
-      d="M24 42V22H28.4L35.6 34.4V22H40V42H35.6L28.4 29.6V42Z"
-      fill="var(--accent-ink)"
+      d="M371 371H526L794 711V371H949V948H794L526 608V948H371Z"
+      fill="#0B0D0E"
     />
   </svg>
 );

@@ -379,6 +379,7 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2)
   .nav-links.open { transform: none; opacity: 1; visibility: visible; }
   .nav-links a, .nav-links .link-btn { padding: 14px 8px; border-bottom: 1px solid var(--line); font-size: 17px; }
   .nav-toggle { display: flex; }
+  .nav-cta { margin-left: auto; }
   .hero { padding-top: 100px; min-height: auto; }
   .hero-inner, .how-grid, .showcase-inner, .download-card { grid-template-columns: 1fr; }
   .hero-stage { height: 420px; min-height: 0; order: -1; margin: -10px -24px 0; }
@@ -391,7 +392,9 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2)
 @media (max-width: 600px) {
   .wrap { padding: 0 16px; }
   .nav-cta .btn { display: none; }
-  .hero-stage { height: 340px; margin: -10px -16px 0; }
+  .hero { padding-top: 76px; }
+  .hero-stage { height: 290px; margin: 0 -16px -8px; }
+  .hero h1 { margin: 18px 0 16px; }
   .hero-stats { grid-template-columns: repeat(2, 1fr); row-gap: 20px; }
   .hero-stats > div:nth-child(3) { padding-left: 0; border-left: 0; }
   .hero-actions .btn { flex: 1 1 100%; }
@@ -410,7 +413,9 @@ code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2)
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Keep the page alive but calm: no big slides, slower loops. */
   html { scroll-behavior: auto; }
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  .reveal { opacity: 1; transform: none; }
+  .reveal { transform: none; }
+  .ticker-track { animation-duration: 120s; }
+  .float-chip, .support-mark, .no-webgl .hero-fallback { animation: none; }
 }

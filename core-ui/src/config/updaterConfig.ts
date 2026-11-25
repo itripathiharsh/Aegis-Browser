@@ -11,4 +11,4 @@ export const NIVROK_GITHUB_REPO: string =
 export const NIVROK_APP_VERSION: string =
   import.meta.env.VITE_NIVROK_APP_VERSION ??
   import.meta.env.VITE_AEGIS_APP_VERSION ??
-  '1.0.8';
+  '1.0.9';
