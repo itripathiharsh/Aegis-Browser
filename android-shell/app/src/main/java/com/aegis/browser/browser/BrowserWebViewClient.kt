@@ -1,6 +1,11 @@
 package com.aegis.browser.browser
 
 import android.graphics.Bitmap
+import android.net.Uri
+import android.net.http.SslError
+import android.text.TextUtils
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -18,7 +23,10 @@ class BrowserWebViewClient(
     private val adBlockEngine: AdBlockEngine,
     private val telemetry: ShieldsTelemetry,
     private val isAutoPopupTab: () -> Boolean,
+    private val isIncognitoTab: () -> Boolean,
     private val isDesktopMode: () -> Boolean,
+    private val getTheme: () -> String,
+    private val onExternalSchemeRequested: (Uri) -> Boolean,
     private val onAutoClosePopupTab: (tabId: String, blockedUrl: String, rule: String) -> Unit,
     private val onVisitRecorded: (tabId: String, url: String, title: String?, host: String?) -> Unit,
     private val onStateChanged: (tabId: String, url: String, loading: Boolean, canBack: Boolean, canForward: Boolean) -> Unit
@@ -81,7 +89,8 @@ class BrowserWebViewClient(
         request: WebResourceRequest?
     ): Boolean {
         val req = request ?: return false
-        val targetUrl = req.url?.toString() ?: return false
+        val uri = req.url ?: return false
+        val targetUrl = uri.toString()
         val pageUrl = currentPageUrl.get()
 
         val decision = adBlockEngine.evaluateNavigation(
@@ -103,6 +112,9 @@ class BrowserWebViewClient(
 
         val lower = targetUrl.lowercase()
         if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            if (!isAutoPopupTab() && req.hasGesture() && isAllowedExternalScheme(lower)) {
+                return onExternalSchemeRequested(uri)
+            }
             if (isAutoPopupTab()) {
                 logAndMaybeClosePopup(
                     url = targetUrl,
@@ -120,6 +132,7 @@ class BrowserWebViewClient(
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
         if (!url.isNullOrBlank()) {
+            if (url.startsWith("data:text/html")) return
             if (isAutoPopupTab()) {
                 val navCheck = adBlockEngine.evaluateNavigation(
                     targetUrl = url,
@@ -152,7 +165,7 @@ class BrowserWebViewClient(
 
     override fun onPageCommitVisible(view: WebView?, url: String?) {
         super.onPageCommitVisible(view, url)
-        if (!url.isNullOrBlank()) {
+        if (!url.isNullOrBlank() && !url.startsWith("data:text/html")) {
             updateTrackedUrl(url)
             injectPageHelpers(view, url)
         }
@@ -161,10 +174,21 @@ class BrowserWebViewClient(
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         val finalUrl = url ?: currentPageUrl.get() ?: ""
+        if (finalUrl.startsWith("data:text/html")) {
+            onStateChanged(
+                tabId,
+                currentPageUrl.get() ?: "",
+                false,
+                view?.canGoBack() ?: false,
+                view?.canGoForward() ?: false
+            )
+            return
+        }
         if (finalUrl.isNotBlank()) {
             updateTrackedUrl(finalUrl)
             injectPageHelpers(view, finalUrl)
-            if (!isAutoPopupTab() &&
+            if (!isIncognitoTab() &&
+                !isAutoPopupTab() &&
                 !AdBlockEngine.isSuspiciousAdRedirectUrl(finalUrl.lowercase()) &&
                 !adBlockEngine.evaluateNavigation(finalUrl, null, false).blocked
             ) {
@@ -182,7 +206,7 @@ class BrowserWebViewClient(
 
     override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
         super.doUpdateVisitedHistory(view, url, isReload)
-        if (!url.isNullOrBlank()) {
+        if (!url.isNullOrBlank() && !url.startsWith("data:text/html")) {
             updateTrackedUrl(url)
             onStateChanged(
                 tabId,
@@ -192,6 +216,51 @@ class BrowserWebViewClient(
                 view?.canGoForward() ?: false
             )
         }
+    }
+
+    override fun onReceivedError(
+        view: WebView?,
+        request: WebResourceRequest?,
+        error: WebResourceError?
+    ) {
+        super.onReceivedError(view, request, error)
+        if (view == null || request == null || !request.isForMainFrame) return
+        val code = error?.errorCode ?: return
+        // Ignore intentionally aborted loads / cancelled requests
+        if (code == ERROR_UNKNOWN || error.description?.toString()?.contains("ERR_ABORTED", ignoreCase = true) == true) return
+        val failingUrl = request.url?.toString() ?: currentPageUrl.get() ?: return
+        val desc = error.description?.toString().orEmpty().ifBlank { "Unable to reach server" }
+        val isOffline = code == ERROR_HOST_LOOKUP || code == ERROR_CONNECT || code == ERROR_TIMEOUT
+        val html = buildErrorHtml(
+            title = if (isOffline) "You appear to be offline" else "Page couldn't be loaded",
+            subtitle = "Aegis Browser could not load ${TextUtils.htmlEncode(AdBlockEngine.extractHost(failingUrl) ?: failingUrl)}.",
+            detail = TextUtils.htmlEncode(desc),
+            retryUrl = TextUtils.htmlEncode(failingUrl),
+            isWarning = false,
+            isLight = getTheme() == "light"
+        )
+        view.loadDataWithBaseURL(failingUrl, html, "text/html", "utf-8", failingUrl)
+    }
+
+    override fun onReceivedSslError(
+        view: WebView?,
+        handler: SslErrorHandler?,
+        error: SslError?
+    ) {
+        // Never silently proceed on broken SSL certificates
+        handler?.cancel()
+        if (view == null) return
+        val badUrl = error?.url ?: currentPageUrl.get() ?: "this site"
+        val host = AdBlockEngine.extractHost(badUrl) ?: badUrl
+        val html = buildErrorHtml(
+            title = "Your connection is not private",
+            subtitle = "Aegis blocked ${TextUtils.htmlEncode(host)} because its security certificate is invalid or expired.",
+            detail = "Attackers might be trying to intercept information from this site.",
+            retryUrl = TextUtils.htmlEncode(badUrl),
+            isWarning = true,
+            isLight = getTheme() == "light"
+        )
+        view.loadDataWithBaseURL(badUrl, html, "text/html", "utf-8", badUrl)
     }
 
     private fun logAndMaybeClosePopup(
@@ -313,7 +382,7 @@ class BrowserWebViewClient(
                     "OK",
                     headers,
                     ByteArrayInputStream(
-                        "<!doctype html><html><head><style>html,body{margin:0;padding:0;background:#0B0E14;display:none!important;}</style></head><body></body></html>".toByteArray()
+                        "<!doctype html><html><head><style>html,body{margin:0;padding:0;background:#0F1115;display:none!important;}</style></head><body></body></html>".toByteArray()
                     )
                 )
             }
@@ -331,6 +400,53 @@ class BrowserWebViewClient(
     }
 
     companion object {
+        private val USER_EXTERNAL_SCHEMES = listOf("mailto:", "tel:", "sms:", "geo:")
+
+        private fun isAllowedExternalScheme(lowerUrl: String): Boolean =
+            USER_EXTERNAL_SCHEMES.any { lowerUrl.startsWith(it) }
+
+        private fun buildErrorHtml(
+            title: String,
+            subtitle: String,
+            detail: String,
+            retryUrl: String,
+            isWarning: Boolean,
+            isLight: Boolean
+        ): String {
+            val bg = if (isLight) "#F5F6F8" else "#0F1115"
+            val surface = if (isLight) "#FFFFFF" else "#161A22"
+            val border = if (isLight) "rgba(15,23,42,0.10)" else "rgba(255,255,255,0.10)"
+            val text = if (isLight) "#111827" else "#F3F4F6"
+            val muted = if (isLight) "#4B5563" else "#9CA3AF"
+            val accent = if (isWarning) "#DC2626" else "#F06428"
+            return """
+                <!doctype html>
+                <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+                <style>
+                  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:$bg;color:$text;font-family:system-ui,-apple-system,sans-serif;box-sizing:border-box}
+                  .card{max-width:400px;width:100%;padding:24px;border-radius:16px;background:$surface;border:1px solid $border}
+                  .badge{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;color:$accent;background:rgba(240,100,40,0.12);margin-bottom:12px}
+                  h1{margin:0 0 8px;font-size:20px;line-height:1.25}
+                  p{margin:0 0 12px;font-size:14px;line-height:1.5;color:$muted}
+                  .detail{font-family:monospace;font-size:12px;word-break:break-word;margin-bottom:18px}
+                  .actions{display:flex;gap:10px;flex-wrap:wrap}
+                  button{min-height:42px;padding:0 16px;border-radius:10px;border:0;font-weight:600;font-size:14px;cursor:pointer}
+                  .primary{background:$accent;color:#fff}
+                  .secondary{background:transparent;color:$text;border:1px solid $border}
+                </style></head>
+                <body><div class="card">
+                  <div class="badge">${if (isWarning) "Security Warning" else "Connection Issue"}</div>
+                  <h1>$title</h1>
+                  <p>$subtitle</p>
+                  <p class="detail">$detail</p>
+                  <div class="actions">
+                    ${if (!isWarning) "<button class=\"primary\" onclick=\"location.href='$retryUrl'\">Try Again</button>" else "<button class=\"primary\" onclick=\"history.back()\">Go Back Safely</button>"}
+                    <button class="secondary" onclick="history.back()">Back</button>
+                  </div>
+                </div></body></html>
+            """.trimIndent()
+        }
+
         private const val DESKTOP_VIEWPORT_SCRIPT = """
             (function(){
               try {

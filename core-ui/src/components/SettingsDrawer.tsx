@@ -29,10 +29,18 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 }) => {
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
-  const toggleKey = (key: keyof Pick<
-    BrowserSettings,
-    'showRecommendations' | 'defaultDesktopMode' | 'blockThirdPartyCookies' | 'saveHistory' | 'autoSyncFilters'
-  >) => {
+  const toggleKey = (
+    key: keyof Pick<
+      BrowserSettings,
+      | 'showRecommendations'
+      | 'defaultDesktopMode'
+      | 'blockThirdPartyCookies'
+      | 'saveHistory'
+      | 'autoSyncFilters'
+      | 'allowSitePermissionPrompts'
+      | 'restoreTabsOnStart'
+    >
+  ) => {
     onUpdateSettings({
       ...settings,
       [key]: !settings[key],
@@ -91,6 +99,30 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         </div>
 
         <div className="panel-card">
+          <div className="toggle-row" style={{ minHeight: 'auto', marginBottom: '0.25rem' }}>
+            <span className="row-title">Webpage Text Size</span>
+            <span className="menu-badge">{settings.textZoom}%</span>
+          </div>
+          <input
+            type="range"
+            className="zoom-slider"
+            min={75}
+            max={150}
+            step={5}
+            value={settings.textZoom}
+            aria-label="Webpage text zoom percentage"
+            onChange={(e) =>
+              onUpdateSettings({ ...settings, textZoom: Number(e.target.value) })
+            }
+          />
+          <div className="row-meta" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Compact (75%)</span>
+            <span>Default (100%)</span>
+            <span>Large (150%)</span>
+          </div>
+        </div>
+
+        <div className="panel-card">
           <div className="row-title" style={{ marginBottom: '0.5rem' }}>
             Default Search Engine
           </div>
@@ -116,17 +148,30 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 
         <div className="panel-card">
           <div className="row-title" style={{ marginBottom: '0.35rem' }}>
-            Start Page & Browsing
+            Tabs &amp; Browsing
           </div>
           <div className="toggle-row">
             <div>
-              <div className="row-title">Recommended Sites</div>
-              <div className="row-meta">Show frequently visited sites on Start page</div>
+              <div className="row-title">Restore Open Tabs on Start</div>
+              <div className="row-meta">Keep normal tabs after closing Aegis</div>
             </div>
             <button
               type="button"
               className="toggle-switch"
-              aria-label="Toggle Recommended Sites"
+              aria-label="Toggle Restore Open Tabs on Start"
+              aria-pressed={settings.restoreTabsOnStart}
+              onClick={() => toggleKey('restoreTabsOnStart')}
+            />
+          </div>
+          <div className="toggle-row">
+            <div>
+              <div className="row-title">Frequently Visited on Start</div>
+              <div className="row-meta">Show top visited non-ad websites on Home</div>
+            </div>
+            <button
+              type="button"
+              className="toggle-switch"
+              aria-label="Toggle Frequently Visited"
               aria-pressed={settings.showRecommendations}
               onClick={() => toggleKey('showRecommendations')}
             />
@@ -148,7 +193,20 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
 
         <div className="panel-card">
           <div className="row-title" style={{ marginBottom: '0.35rem' }}>
-            Privacy & Shields
+            Privacy, Permissions &amp; Shields
+          </div>
+          <div className="toggle-row">
+            <div>
+              <div className="row-title">Ask for Camera / Mic / Location</div>
+              <div className="row-meta">Show permission prompt instead of auto-denying</div>
+            </div>
+            <button
+              type="button"
+              className="toggle-switch"
+              aria-label="Toggle Site Permission Prompts"
+              aria-pressed={settings.allowSitePermissionPrompts}
+              onClick={() => toggleKey('allowSitePermissionPrompts')}
+            />
           </div>
           <div className="toggle-row">
             <div>
@@ -166,7 +224,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Save Browsing History</div>
-              <div className="row-meta">Enable History & search autocomplete</div>
+              <div className="row-meta">Enable History &amp; search autocomplete</div>
             </div>
             <button
               type="button"
@@ -179,7 +237,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Daily Ad-Filter Auto-Sync</div>
-              <div className="row-meta">Keep 52,000+ filter rules fresh daily</div>
+              <div className="row-meta">Keep 53,000+ filter rules fresh daily</div>
             </div>
             <button
               type="button"
@@ -191,14 +249,14 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </div>
           <div className="settings-action-row">
             <button type="button" className="secondary-btn" onClick={onOpenShields}>
-              Open Ad-Block & Shields Controls
+              Open Ad-Block &amp; Shields Controls
             </button>
           </div>
         </div>
 
         <div className="panel-card">
           <div className="row-title" style={{ marginBottom: '0.5rem' }}>
-            Site Data & Storage
+            Site Data &amp; Storage
           </div>
           <div className="settings-action-grid">
             <button
@@ -206,7 +264,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               className="danger-btn"
               onClick={() => {
                 onClearHistory();
-                setFeedbackMsg('Browsing history & recommendations cleared.');
+                setFeedbackMsg('Browsing history & suggestions cleared.');
               }}
             >
               Clear History
@@ -219,7 +277,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                 setFeedbackMsg('WebView cache & cookies cleared.');
               }}
             >
-              Clear Cache & Cookies
+              Clear Cache &amp; Cookies
             </button>
           </div>
           {feedbackMsg && (

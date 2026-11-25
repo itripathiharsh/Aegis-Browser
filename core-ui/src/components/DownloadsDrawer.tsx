@@ -4,6 +4,7 @@ import { FolderIcon, TrashIcon } from './BrowserIcons';
 
 interface DownloadsDrawerProps {
   records: DownloadRecord[];
+  onOpenFile: (id: string) => void;
   onOpenSystemDownloads: () => void;
   onRemoveRecord: (id: string) => void;
   onClearCompleted: () => void;
@@ -19,6 +20,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatHost(url: string): string {
+  if (url.startsWith('blob://')) return 'Generated file';
   try {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
@@ -28,6 +30,7 @@ function formatHost(url: string): string {
 
 export const DownloadsDrawer: React.FC<DownloadsDrawerProps> = ({
   records,
+  onOpenFile,
   onOpenSystemDownloads,
   onRemoveRecord,
   onClearCompleted,
@@ -75,7 +78,7 @@ export const DownloadsDrawer: React.FC<DownloadsDrawerProps> = ({
           <div className="panel-card empty-state-card">
             <div className="row-title">No downloads yet</div>
             <div className="row-meta">
-              Files you download from web pages are handed safely to Android Download Manager and tracked here.
+              Files and web exports you download are saved through Android Download Manager and can be opened right from here.
             </div>
           </div>
         ) : (
@@ -95,18 +98,22 @@ export const DownloadsDrawer: React.FC<DownloadsDrawerProps> = ({
               return (
                 <div key={rec.id} className="panel-card dl-item-card">
                   <div className="dl-item-top">
-                    <div className="dl-item-info">
-                      <div className="row-title dl-filename">{rec.fileName}</div>
-                      <div className="row-meta">
+                    <button
+                      type="button"
+                      className="dl-item-info dl-open-btn"
+                      onClick={() => onOpenFile(rec.id)}
+                    >
+                      <span className="row-title dl-filename">{rec.fileName}</span>
+                      <span className="row-meta">
                         {formatHost(rec.url)} • {sizeLabel}
-                      </div>
-                    </div>
+                      </span>
+                    </button>
                     <div className="dl-item-actions">
                       <span className="dl-status-pill" data-status={rec.status}>
                         {rec.status === 'downloading'
                           ? 'Downloading'
                           : rec.status === 'completed'
-                            ? 'Saved'
+                            ? 'Open'
                             : 'Failed'}
                       </span>
                       <button

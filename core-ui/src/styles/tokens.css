@@ -35,6 +35,10 @@
   --scrim-menu: rgba(0, 0, 0, 0.48);
   --scrim-modal: rgba(0, 0, 0, 0.72);
   --shields-hero-bg: linear-gradient(155deg, rgba(240, 100, 40, 0.1), var(--bg-elevated) 72%);
+  --incognito-bar: #1a1626;
+  --incognito-accent: #a78bfa;
+  --incognito-soft: rgba(167, 139, 250, 0.16);
+  --hero-pattern: radial-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
 
   color-scheme: dark;
 
@@ -78,6 +82,10 @@
   --scrim-menu: rgba(15, 23, 42, 0.26);
   --scrim-modal: rgba(15, 23, 42, 0.45);
   --shields-hero-bg: linear-gradient(155deg, rgba(217, 78, 24, 0.07), #ffffff 72%);
+  --incognito-bar: #2d2546;
+  --incognito-accent: #7c3aed;
+  --incognito-soft: rgba(124, 58, 237, 0.12);
+  --hero-pattern: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
 
   color-scheme: light;
 

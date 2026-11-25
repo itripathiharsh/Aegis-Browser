@@ -1,14 +1,20 @@
 package com.aegis.browser.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -17,7 +23,9 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,6 +36,7 @@ import com.aegis.browser.adblock.FilterListUpdater
 import com.aegis.browser.adblock.ShieldsConfig
 import com.aegis.browser.adblock.ShieldsTelemetry
 import com.aegis.browser.bridge.NativeBridge
+import com.aegis.browser.bridge.PendingPermissionUi
 import com.aegis.browser.browser.BrowserDataStore
 import com.aegis.browser.browser.DownloadsRepository
 import com.aegis.browser.browser.TabManager
@@ -40,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -67,10 +77,39 @@ class MainActivity : AppCompatActivity() {
     private var customVideoView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingPromptId: String? = null
+    private var pendingWebPermission: PermissionRequest? = null
+    private var pendingGeoOrigin: String? = null
+    private var pendingGeoCallback: GeolocationPermissions.Callback? = null
+
     private var overlayExpanded: Boolean = true
     private var lastBarHeightPx: Int = 0
     private var uiReady: Boolean = false
     private var pushScheduled: Boolean = false
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val cb = pendingFileCallback
+        pendingFileCallback = null
+        if (cb != null) {
+            val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            val fallbackClip = if (uris == null && result.resultCode == RESULT_OK) {
+                extractClipUris(result.data)
+            } else {
+                uris
+            }
+            cb.onReceiveValue(fallbackClip)
+        }
+    }
+
+    private val runtimePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val allGranted = grants.values.all { it }
+        finishPendingSitePermission(allow = allGranted)
+    }
 
     private val pushRunnable = Runnable {
         pushScheduled = false
@@ -139,23 +178,23 @@ class MainActivity : AppCompatActivity() {
         )
 
         rootFrame = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setBackgroundColor(initialBg)
         }
 
         browserStack = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setBackgroundColor(initialBg)
         }
 
         chromeUiWebView = WebView(this).apply {
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setBackgroundColor(initialBg)
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             isFocusable = true
             isFocusableInTouchMode = true
         }
 
         contentContainer = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setBackgroundColor(initialBg)
             visibility = View.GONE
         }
 
@@ -221,10 +260,26 @@ class MainActivity : AppCompatActivity() {
             },
             onHideFullscreen = {
                 exitFullscreenVideo()
+            },
+            onShowFileChooser = { callback, params ->
+                launchWebFileChooser(callback, params)
+            },
+            onPermissionRequested = { request ->
+                handleWebPermissionRequest(request)
+            },
+            onGeolocationRequested = { origin, callback ->
+                handleGeolocationRequest(origin, callback)
+            },
+            onLinkLongPressed = { payload ->
+                nativeBridge.setPendingContextMenu(payload)
+            },
+            onFindUpdated = { findState ->
+                nativeBridge.updateFindMatches(findState)
             }
         )
 
         nativeBridge = NativeBridge(
+            context = this,
             runOnUi = { block -> runOnUiThread(block) },
             scope = scope,
             tabManager = tabManager,
@@ -237,7 +292,7 @@ class MainActivity : AppCompatActivity() {
             saveShieldsConfig = { cfg -> persistShieldsConfig(cfg) },
             onLayoutModeChanged = { expanded, barHeightPx ->
                 overlayExpanded = expanded
-                if (barHeightPx in dpToPx(44)..dpToPx(240)) {
+                if (barHeightPx in dpToPx(44)..dpToPx(320)) {
                     lastBarHeightPx = barHeightPx
                 }
                 updateViewportSplit()
@@ -254,11 +309,13 @@ class MainActivity : AppCompatActivity() {
             },
             onThemeChanged = { theme ->
                 applySystemTheme(theme)
+            },
+            onRespondSitePermission = { id, allow ->
+                handlePermissionPromptDecision(id, allow)
             }
         )
 
         applySystemTheme(dataStore.getSettings().theme)
-
         tabManager.ensureInitialTab()
         configureChromeUiWebView()
         handleIncomingIntent(intent)
@@ -309,6 +366,134 @@ class MainActivity : AppCompatActivity() {
     internal fun awaitInitialFiltersForTesting(timeoutMs: Long = 5000L): Boolean =
         initialFiltersLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
 
+    private fun launchWebFileChooser(
+        callback: ValueCallback<Array<Uri>>,
+        params: WebChromeClient.FileChooserParams?
+    ): Boolean {
+        pendingFileCallback?.onReceiveValue(null)
+        pendingFileCallback = callback
+
+        val baseIntent = runCatching { params?.createIntent() }.getOrNull()
+            ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+            }
+        if (params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+            baseIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        val launched = runCatching {
+            fileChooserLauncher.launch(Intent.createChooser(baseIntent, "Select file"))
+        }.isSuccess
+        if (!launched) {
+            pendingFileCallback?.onReceiveValue(null)
+            pendingFileCallback = null
+        }
+        return launched
+    }
+
+    private fun extractClipUris(data: Intent?): Array<Uri>? {
+        val clip = data?.clipData ?: return data?.data?.let { arrayOf(it) }
+        val uris = mutableListOf<Uri>()
+        for (i in 0 until clip.itemCount) {
+            clip.getItemAt(i)?.uri?.let { uris.add(it) }
+        }
+        return if (uris.isNotEmpty()) uris.toTypedArray() else null
+    }
+
+    private fun handleWebPermissionRequest(request: PermissionRequest) {
+        if (!dataStore.getSettings().allowSitePermissionPrompts ||
+            tabManager.getActiveTab()?.incognito == true
+        ) {
+            request.deny()
+            return
+        }
+        clearPendingPermissionRequests()
+        val id = "perm-" + UUID.randomUUID().toString().take(8)
+        pendingPromptId = id
+        pendingWebPermission = request
+        val resources = request.resources ?: emptyArray()
+        val label = buildList {
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in resources) add("Camera")
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in resources) add("Microphone")
+        }.ifEmpty { listOf("Media hardware") }.joinToString(" & ")
+        val host = request.origin?.host?.takeIf { it.isNotBlank() } ?: "This site"
+        nativeBridge.setPendingPermission(PendingPermissionUi(id, host, label))
+    }
+
+    private fun handleGeolocationRequest(
+        origin: String,
+        callback: GeolocationPermissions.Callback
+    ) {
+        if (!dataStore.getSettings().allowSitePermissionPrompts ||
+            tabManager.getActiveTab()?.incognito == true
+        ) {
+            callback.invoke(origin, false, false)
+            return
+        }
+        clearPendingPermissionRequests()
+        val id = "perm-" + UUID.randomUUID().toString().take(8)
+        pendingPromptId = id
+        pendingGeoOrigin = origin
+        pendingGeoCallback = callback
+        val host = runCatching { Uri.parse(origin).host }.getOrNull() ?: origin
+        nativeBridge.setPendingPermission(PendingPermissionUi(id, host, "Location"))
+    }
+
+    private fun handlePermissionPromptDecision(id: String, allow: Boolean) {
+        if (pendingPromptId != id) return
+        if (!allow) {
+            finishPendingSitePermission(allow = false)
+            return
+        }
+
+        val needed = mutableListOf<String>()
+        pendingWebPermission?.resources?.forEach { res ->
+            if (res == PermissionRequest.RESOURCE_VIDEO_CAPTURE) {
+                needed.add(Manifest.permission.CAMERA)
+            } else if (res == PermissionRequest.RESOURCE_AUDIO_CAPTURE) {
+                needed.add(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        if (pendingGeoCallback != null) {
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+
+        val missing = needed.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            finishPendingSitePermission(allow = true)
+        } else {
+            runtimePermissionsLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun finishPendingSitePermission(allow: Boolean) {
+        val webReq = pendingWebPermission
+        val geoCb = pendingGeoCallback
+        val geoOrigin = pendingGeoOrigin
+        pendingPromptId = null
+        pendingWebPermission = null
+        pendingGeoCallback = null
+        pendingGeoOrigin = null
+
+        if (webReq != null) {
+            runCatching {
+                if (allow) webReq.grant(webReq.resources) else webReq.deny()
+            }
+        }
+        if (geoCb != null && geoOrigin != null) {
+            runCatching {
+                geoCb.invoke(geoOrigin, allow, false)
+            }
+        }
+    }
+
+    private fun clearPendingPermissionRequests() {
+        finishPendingSitePermission(allow = false)
+        nativeBridge.setPendingPermission(null)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureChromeUiWebView() {
         val assetLoader = WebViewAssetLoader.Builder()
@@ -333,6 +518,23 @@ class MainActivity : AppCompatActivity() {
             ): WebResourceResponse? {
                 val url = request?.url ?: return null
                 return assetLoader.shouldInterceptRequest(url)
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val uri = request?.url ?: return false
+                val scheme = uri.scheme?.lowercase().orEmpty()
+                if (scheme == "mailto" || scheme == "tel" || scheme == "sms") {
+                    runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, uri).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                    }
+                    return true
+                }
+                return false
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -523,6 +725,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(pushRunnable)
+        clearPendingPermissionRequests()
         scope.cancel()
         if (::tabManager.isInitialized) tabManager.destroyAll()
         if (::chromeUiWebView.isInitialized) chromeUiWebView.destroy()

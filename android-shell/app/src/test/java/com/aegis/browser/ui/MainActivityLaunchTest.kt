@@ -285,6 +285,80 @@ class MainActivityLaunchTest {
         assertEquals(0, JSONArray(bridge.getHistory()).length())
         assertEquals(0, JSONArray(bridge.getDownloads()).length())
 
+        bridge.addBookmark("Kotlin", "https://kotlinlang.org", "Code")
+        val bookmarksArr = JSONArray(bridge.getBookmarks())
+        assertTrue(bookmarksArr.length() >= 1)
+        assertTrue(updatedState.has("bookmarks"))
+        assertTrue(updatedState.has("canReopenClosedTab"))
+
         controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun tabGroupsIncognitoReopenAndBookmarksWorkCleanly() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dataStore = BrowserDataStore(context)
+        dataStore.clearHistoryAndRecommendations()
+
+        val added = dataStore.addBookmark("Aegis Repo", "https://github.com/itripathiharsh/Aegis-Browser", "Code")
+        assertTrue(added != null)
+        assertEquals(
+            "https://github.com/itripathiharsh/Aegis-Browser",
+            dataStore.getBookmarksJson().getJSONObject(0).getString("url")
+        )
+        assertTrue(dataStore.removeBookmark(added!!.id))
+
+        dataStore.updateSettings(
+            BrowserSettings(
+                searchEngine = "brave",
+                theme = "light",
+                textZoom = 125,
+                allowSitePermissionPrompts = true,
+                restoreTabsOnStart = true
+            )
+        )
+        assertEquals(125, dataStore.getSettings().textZoom)
+
+        val container = android.widget.FrameLayout(context)
+        val engine = AdBlockEngine().apply { loadFromContext(context) }
+        val telemetry = com.aegis.browser.adblock.ShieldsTelemetry {}
+        val downloadsRepo = DownloadsRepository(
+            context = context,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            onChanged = {}
+        )
+        val manager = TabManager(
+            context = context,
+            container = container,
+            adBlockEngine = engine,
+            telemetry = telemetry,
+            dataStore = dataStore,
+            downloadsRepo = downloadsRepo,
+            onTabsUpdated = {},
+            onShowFullscreen = { _, _ -> },
+            onHideFullscreen = {}
+        )
+
+        val opener = manager.createTab("https://en.wikipedia.org/wiki/Kotlin", makeActive = true)
+        val groupedChild = manager.openInTabGroup(opener.id, "https://en.wikipedia.org/wiki/Android", makeActive = false)
+        assertTrue(opener.groupId != null)
+        assertEquals(opener.groupId, groupedChild.groupId)
+        assertEquals(opener.groupColor, groupedChild.groupColor)
+
+        manager.renameTabGroup(opener.groupId!!, "Research")
+        assertEquals("Research", groupedChild.groupTitle)
+
+        manager.closeTab(groupedChild.id)
+        assertTrue(manager.canReopenClosedTab())
+        val reopened = manager.reopenLastClosedTab()
+        assertEquals("https://en.wikipedia.org/wiki/Android", reopened?.url)
+        assertEquals(opener.groupId, reopened?.groupId)
+
+        val inc = manager.createTab("https://example.org/private", makeActive = true, incognito = true)
+        assertTrue(inc.incognito)
+        manager.ungroupTab(opener.id)
+        assertEquals(null, opener.groupId)
+
+        manager.destroyAll()
     }
 }

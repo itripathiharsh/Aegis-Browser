@@ -1,12 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { BookmarkItem, HistoryEntry, SearchEngineId, TabInfo } from '../adblock/types';
+import type {
+  BookmarkItem,
+  FindState,
+  HistoryEntry,
+  PendingPermissionPrompt,
+  SearchEngineId,
+  TabInfo,
+} from '../adblock/types';
 import { buildOmniboxSuggestions, type OmniboxSuggestion } from '../utils/suggestions';
 import { SEARCH_ENGINES, formatDisplayUrl } from '../utils/urlResolver';
 import {
+  CopyIcon,
   DownloadIcon,
+  FindPageIcon,
   HistoryIcon,
+  IncognitoIcon,
+  ReaderIcon,
   SettingsIcon,
+  ShareIcon,
 } from './BrowserIcons';
+import { FindBar } from './FindBar';
 import {
   AegisCrest,
   BackIcon,
@@ -16,6 +29,7 @@ import {
   HomeIcon,
   LockIcon,
   MoreVertIcon,
+  PlusIcon,
   ReloadIcon,
   ShieldIcon,
   StopIcon,
@@ -32,7 +46,7 @@ export type DrawerKind =
 
 interface TopBarProps {
   activeTab: TabInfo;
-  tabCount: number;
+  allTabs: TabInfo[];
   totalBlocked: number;
   downloadsActiveCount?: number;
   shieldsEnabledForSite: boolean;
@@ -42,6 +56,9 @@ interface TopBarProps {
   bookmarks: BookmarkItem[];
   activeDrawer: DrawerKind | null;
   menuOpen: boolean;
+  findBarOpen: boolean;
+  findState: FindState | null;
+  pendingPermission: PendingPermissionPrompt | null;
   omniboxInputRef: React.RefObject<HTMLInputElement>;
   barRef: React.RefObject<HTMLDivElement>;
   onToggleMenu: (open: boolean) => void;
@@ -53,12 +70,25 @@ interface TopBarProps {
   onGoHome: () => void;
   onToggleBookmark: () => void;
   onToggleDesktopMode: () => void;
+  onToggleReaderMode: () => void;
+  onNewTab: () => void;
+  onNewIncognitoTab: () => void;
+  onSwitchTab: (tabId: string) => void;
+  onCloseTab: (tabId: string) => void;
+  onAddTabToGroup: (sourceTabId: string) => void;
+  onCopyCurrentUrl: () => void;
+  onShareCurrentUrl: () => void;
+  onOpenFindBar: () => void;
+  onCloseFindBar: () => void;
+  onFindQueryChange: (q: string) => void;
+  onFindNext: (forward: boolean) => void;
+  onRespondPermission: (id: string, allow: boolean) => void;
   onOpenDrawer: (drawer: DrawerKind) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
-  tabCount,
+  allTabs,
   totalBlocked,
   downloadsActiveCount = 0,
   shieldsEnabledForSite,
@@ -68,6 +98,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   bookmarks,
   activeDrawer,
   menuOpen,
+  findBarOpen,
+  findState,
+  pendingPermission,
   omniboxInputRef,
   barRef,
   onToggleMenu,
@@ -79,9 +112,23 @@ export const TopBar: React.FC<TopBarProps> = ({
   onGoHome,
   onToggleBookmark,
   onToggleDesktopMode,
+  onToggleReaderMode,
+  onNewTab,
+  onNewIncognitoTab,
+  onSwitchTab,
+  onCloseTab,
+  onAddTabToGroup,
+  onCopyCurrentUrl,
+  onShareCurrentUrl,
+  onOpenFindBar,
+  onCloseFindBar,
+  onFindQueryChange,
+  onFindNext,
+  onRespondPermission,
   onOpenDrawer,
 }) => {
   const [draft, setDraft] = useState('');
+  const [findQuery, setFindQuery] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [pulse, setPulse] = useState(false);
   const prevBlockedRef = useRef(totalBlocked);
@@ -91,6 +138,10 @@ export const TopBar: React.FC<TopBarProps> = ({
       setDraft(activeTab.url === 'aegis://home' ? '' : activeTab.url);
     }
   }, [activeTab.url, isEditing]);
+
+  useEffect(() => {
+    if (!findBarOpen) setFindQuery('');
+  }, [findBarOpen]);
 
   useEffect(() => {
     if (totalBlocked > prevBlockedRef.current) {
@@ -104,6 +155,10 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const { hostLabel, isSecure, isInternal } = formatDisplayUrl(activeTab.url);
   const engineLabel = SEARCH_ENGINES[searchEngine]?.label ?? 'DuckDuckGo';
+  const groupTabs = useMemo(
+    () => (activeTab.groupId ? allTabs.filter((t) => t.groupId === activeTab.groupId) : []),
+    [activeTab.groupId, allTabs]
+  );
 
   const suggestions = useMemo(
     () =>
@@ -133,7 +188,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   return (
-    <div className="topbar-wrap" ref={barRef} data-home={isInternal ? 'true' : 'false'}>
+    <div
+      className="topbar-wrap"
+      ref={barRef}
+      data-home={isInternal ? 'true' : 'false'}
+      data-incognito={activeTab.incognito ? 'true' : 'false'}
+    >
       <header className="topbar" role="toolbar" aria-label="Browser navigation">
         {isInternal ? (
           <>
@@ -146,8 +206,17 @@ export const TopBar: React.FC<TopBarProps> = ({
                 onOpenDrawer('shields');
               }}
             >
-              <AegisCrest size={24} />
-              <span className="home-topbar-name">Aegis</span>
+              {activeTab.incognito ? (
+                <span className="incognito-pill-badge">
+                  <IncognitoIcon size={15} />
+                  <span>Private Mode</span>
+                </span>
+              ) : (
+                <>
+                  <AegisCrest size={24} />
+                  <span className="home-topbar-name">Aegis Browser</span>
+                </>
+              )}
             </button>
             <div className="topbar-spacer" />
           </>
@@ -185,10 +254,10 @@ export const TopBar: React.FC<TopBarProps> = ({
             <form className="omnibox-pill" onSubmit={handleSubmit} role="search">
               <span
                 className="omnibox-lock"
-                data-secure={isSecure ? 'true' : 'false'}
-                title={isSecure ? 'HTTPS Secure' : 'Not Encrypted'}
+                data-secure={activeTab.incognito ? 'incognito' : isSecure ? 'true' : 'false'}
+                title={activeTab.incognito ? 'Incognito Session' : isSecure ? 'HTTPS Secure' : 'Not Encrypted'}
               >
-                <LockIcon size={14} />
+                {activeTab.incognito ? <IncognitoIcon size={14} /> : <LockIcon size={14} />}
               </span>
 
               <label htmlFor="aegis-omnibox" className="sr-only">
@@ -285,14 +354,14 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           type="button"
           className="tabs-square-btn"
-          aria-label={`Open tabs (${tabCount})`}
+          aria-label={`Open tabs (${allTabs.length})`}
           aria-expanded={activeDrawer === 'tabs'}
           onClick={() => {
             onToggleMenu(false);
             onOpenDrawer('tabs');
           }}
         >
-          <span className="tabs-square-num">{tabCount}</span>
+          <span className="tabs-square-num">{allTabs.length}</span>
         </button>
 
         <button
@@ -305,6 +374,96 @@ export const TopBar: React.FC<TopBarProps> = ({
           <MoreVertIcon />
         </button>
       </header>
+
+      {/* Brave-style Tab Group Strip when active tab belongs to a group */}
+      {groupTabs.length > 0 && (
+        <div
+          className="tab-group-strip"
+          style={{ '--group-accent': activeTab.groupColor || '#3B82F6' } as React.CSSProperties}
+          aria-label="Tab group switcher"
+        >
+          <span className="tab-group-strip-badge">
+            <span className="tab-group-dot" />
+            <span>{activeTab.groupTitle || 'Group'}</span>
+          </span>
+          <div className="tab-group-pills">
+            {groupTabs.map((t) => {
+              const active = t.id === activeTab.id;
+              return (
+                <div
+                  key={t.id}
+                  className="tab-group-pill"
+                  data-active={active ? 'true' : 'false'}
+                >
+                  <button
+                    type="button"
+                    className="tab-group-pill-btn"
+                    onClick={() => onSwitchTab(t.id)}
+                  >
+                    {t.title || 'New Tab'}
+                  </button>
+                  <button
+                    type="button"
+                    className="tab-group-pill-close"
+                    aria-label={`Close grouped tab ${t.title}`}
+                    onClick={() => onCloseTab(t.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="tab-group-add-btn"
+            aria-label="Open new tab in this group"
+            onClick={() => onAddTabToGroup(activeTab.id)}
+          >
+            <PlusIcon size={15} />
+          </button>
+        </div>
+      )}
+
+      {findBarOpen && !isInternal && (
+        <FindBar
+          query={findQuery}
+          activeOrdinal={findState?.activeOrdinal ?? 0}
+          totalMatches={findState?.totalMatches ?? 0}
+          onQueryChange={(q) => {
+            setFindQuery(q);
+            onFindQueryChange(q);
+          }}
+          onFindNext={onFindNext}
+          onClose={onCloseFindBar}
+        />
+      )}
+
+      {pendingPermission && (
+        <div className="perm-banner" role="alertdialog" aria-label="Site permission request">
+          <div className="perm-banner-text">
+            <strong>{pendingPermission.origin}</strong> requests access to{' '}
+            <span>{pendingPermission.label}</span>
+          </div>
+          <div className="perm-banner-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => onRespondPermission(pendingPermission.id, false)}
+            >
+              Block
+            </button>
+            <button
+              type="button"
+              className="primary-btn"
+              style={{ minHeight: '36px' }}
+              onClick={() => onRespondPermission(pendingPermission.id, true)}
+            >
+              Allow
+            </button>
+          </div>
+        </div>
+      )}
 
       {isEditing && !isInternal && suggestions.length > 0 && (
         <div className="omnibox-suggestions-sheet">
@@ -343,7 +502,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           }}
         >
           <nav className="overflow-menu" aria-label="Browser menu">
-            <div className="menu-nav-row">
+            <div className="menu-nav-row menu-nav-row-5">
               <button
                 type="button"
                 className="menu-icon-tile"
@@ -353,7 +512,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   onToggleMenu(false);
                 }}
               >
-                <ForwardIcon size={18} />
+                <ForwardIcon size={17} />
                 <span>Forward</span>
               </button>
               <button
@@ -365,8 +524,32 @@ export const TopBar: React.FC<TopBarProps> = ({
                   onToggleMenu(false);
                 }}
               >
-                <ReloadIcon size={18} />
+                <ReloadIcon size={17} />
                 <span>Reload</span>
+              </button>
+              <button
+                type="button"
+                className="menu-icon-tile"
+                disabled={isInternal}
+                onClick={() => {
+                  onShareCurrentUrl();
+                  onToggleMenu(false);
+                }}
+              >
+                <ShareIcon size={17} />
+                <span>Share</span>
+              </button>
+              <button
+                type="button"
+                className="menu-icon-tile"
+                disabled={isInternal}
+                onClick={() => {
+                  onCopyCurrentUrl();
+                  onToggleMenu(false);
+                }}
+              >
+                <CopyIcon size={17} />
+                <span>Copy</span>
               </button>
               <button
                 type="button"
@@ -376,22 +559,38 @@ export const TopBar: React.FC<TopBarProps> = ({
                   onToggleMenu(false);
                 }}
               >
-                <HomeIcon size={18} />
+                <HomeIcon size={17} />
                 <span>Home</span>
               </button>
-              <button
-                type="button"
-                className="menu-icon-tile"
-                disabled={isInternal}
-                onClick={() => {
-                  onToggleBookmark();
-                  onToggleMenu(false);
-                }}
-              >
-                <BookmarkIcon size={18} filled={isBookmarked} />
-                <span>{isBookmarked ? 'Saved' : 'Save'}</span>
-              </button>
             </div>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onNewTab();
+                onToggleMenu(false);
+              }}
+            >
+              <span className="menu-item-left">
+                <PlusIcon size={17} />
+                <span>New Tab</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onNewIncognitoTab();
+                onToggleMenu(false);
+              }}
+            >
+              <span className="menu-item-left">
+                <IncognitoIcon size={17} />
+                <span>New Incognito Tab</span>
+              </span>
+            </button>
 
             <button
               type="button"
@@ -439,20 +638,51 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
 
             {!isInternal && (
-              <button
-                type="button"
-                className="menu-item"
-                onClick={() => {
-                  onToggleDesktopMode();
-                  onToggleMenu(false);
-                }}
-              >
-                <span className="menu-item-left">
-                  <DesktopIcon size={17} />
-                  <span>Desktop site</span>
-                </span>
-                <span className="menu-badge">{activeTab.desktopMode ? 'ON' : 'OFF'}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    onOpenFindBar();
+                    onToggleMenu(false);
+                  }}
+                >
+                  <span className="menu-item-left">
+                    <FindPageIcon size={17} />
+                    <span>Find in page</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    onToggleReaderMode();
+                    onToggleMenu(false);
+                  }}
+                >
+                  <span className="menu-item-left">
+                    <ReaderIcon size={17} />
+                    <span>Reader view</span>
+                  </span>
+                  <span className="menu-badge">{activeTab.readerMode ? 'ON' : 'OFF'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="menu-item"
+                  onClick={() => {
+                    onToggleDesktopMode();
+                    onToggleMenu(false);
+                  }}
+                >
+                  <span className="menu-item-left">
+                    <DesktopIcon size={17} />
+                    <span>Desktop site</span>
+                  </span>
+                  <span className="menu-badge">{activeTab.desktopMode ? 'ON' : 'OFF'}</span>
+                </button>
+              </>
             )}
 
             <button

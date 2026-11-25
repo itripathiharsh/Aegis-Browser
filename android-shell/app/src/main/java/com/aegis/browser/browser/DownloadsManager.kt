@@ -1,11 +1,14 @@
 package com.aegis.browser.browser
 
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
 import android.webkit.URLUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +29,8 @@ data class DownloadRecord(
     val totalBytes: Long,
     val downloadedBytes: Long,
     val status: String, // downloading | completed | failed
-    val startedAtMs: Long
+    val startedAtMs: Long,
+    val contentUri: String? = null
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -38,6 +42,7 @@ data class DownloadRecord(
         put("downloadedBytes", downloadedBytes)
         put("status", status)
         put("startedAtMs", startedAtMs)
+        put("contentUri", contentUri ?: JSONObject.NULL)
     }
 }
 
@@ -68,7 +73,16 @@ class DownloadsRepository(
         mimeType: String?,
         contentLength: Long
     ) {
+        if (url.startsWith("data:", ignoreCase = true)) {
+            saveBlobDataUrl(
+                dataUrl = url,
+                rawFileName = URLUtil.guessFileName("download", contentDisposition, mimeType),
+                rawMime = mimeType
+            )
+            return
+        }
         if (!url.startsWith("http://") && !url.startsWith("https://")) return
+
         val guessed = URLUtil.guessFileName(url, contentDisposition, mimeType)
             .ifBlank { "download-${System.currentTimeMillis()}" }
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -130,6 +144,106 @@ class DownloadsRepository(
         ensurePolling(dm)
     }
 
+    fun saveBlobDataUrl(dataUrl: String, rawFileName: String?, rawMime: String?) {
+        if (!dataUrl.startsWith("data:", ignoreCase = true)) return
+        scope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val commaIdx = dataUrl.indexOf(',')
+                    if (commaIdx <= 0) return@runCatching null
+                    val meta = dataUrl.substring(5, commaIdx)
+                    val payload = dataUrl.substring(commaIdx + 1)
+                    val headerMime = meta.substringBefore(';').takeIf { it.contains('/') }
+                    val safeMime = rawMime?.takeIf { it.isNotBlank() }
+                        ?: headerMime
+                        ?: "application/octet-stream"
+                    val isBase64 = meta.contains(";base64", ignoreCase = true)
+                    val bytes = if (isBase64) {
+                        Base64.decode(payload, Base64.DEFAULT)
+                    } else {
+                        Uri.decode(payload).toByteArray(Charsets.UTF_8)
+                    }
+
+                    val ext = extensionForMime(safeMime)
+                    val baseName = rawFileName?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: "aegis-export-${System.currentTimeMillis()}.$ext"
+                    val safeName = baseName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+                    var uriStr: String? = null
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val resolver = context.contentResolver
+                        val values = ContentValues().apply {
+                            put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+                            put(MediaStore.Downloads.MIME_TYPE, safeMime)
+                            put(MediaStore.Downloads.IS_PENDING, 1)
+                        }
+                        val itemUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        if (itemUri != null) {
+                            resolver.openOutputStream(itemUri)?.use { out ->
+                                out.write(bytes)
+                            }
+                            val finished = ContentValues().apply {
+                                put(MediaStore.Downloads.IS_PENDING, 0)
+                            }
+                            resolver.update(itemUri, finished, null, null)
+                            uriStr = itemUri.toString()
+                        }
+                    }
+
+                    DownloadRecord(
+                        id = "blob-${System.currentTimeMillis()}",
+                        dmId = -1L,
+                        fileName = safeName,
+                        url = "blob://$safeName",
+                        mimeType = safeMime,
+                        totalBytes = bytes.size.toLong(),
+                        downloadedBytes = bytes.size.toLong(),
+                        status = if (uriStr != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) "completed" else "failed",
+                        startedAtMs = System.currentTimeMillis(),
+                        contentUri = uriStr
+                    )
+                }.getOrNull()
+            }
+            if (saved != null) {
+                addOrUpdate(saved)
+            }
+        }
+    }
+
+    fun openDownload(id: String) {
+        val target = synchronized(lock) { records.find { it.id == id } } ?: return
+        if (target.status != "completed") {
+            openSystemDownloads()
+            return
+        }
+
+        // Security/Play Protect boundary: never programmatically invoke APK package installer
+        if (target.fileName.lowercase().endsWith(".apk") ||
+            target.mimeType.equals("application/vnd.android.package-archive", ignoreCase = true)
+        ) {
+            openSystemDownloads()
+            return
+        }
+
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        val resolvedUri = target.contentUri?.let { Uri.parse(it) }
+            ?: if (target.dmId >= 0L) runCatching { dm?.getUriForDownloadedFile(target.dmId) }.getOrNull() else null
+
+        if (resolvedUri == null) {
+            openSystemDownloads()
+            return
+        }
+
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(resolvedUri, target.mimeType.ifBlank { "*/*" })
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val launched = runCatching { context.startActivity(viewIntent) }.isSuccess
+        if (!launched) {
+            openSystemDownloads()
+        }
+    }
+
     fun openSystemDownloads() {
         val intent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -183,10 +297,16 @@ class DownloadsRepository(
                                 DownloadManager.STATUS_FAILED -> "failed"
                                 else -> "downloading"
                             }
+                            val finishedUri = if (nextStatus == "completed" && cur.contentUri == null) {
+                                runCatching { dm.getUriForDownloadedFile(u.dmId)?.toString() }.getOrNull()
+                            } else {
+                                cur.contentUri
+                            }
                             val updated = cur.copy(
                                 status = nextStatus,
                                 downloadedBytes = u.downloadedBytes,
-                                totalBytes = if (u.totalBytes > 0) u.totalBytes else cur.totalBytes
+                                totalBytes = if (u.totalBytes > 0) u.totalBytes else cur.totalBytes,
+                                contentUri = finishedUri
                             )
                             if (updated != cur) {
                                 records[idx] = updated
@@ -270,7 +390,8 @@ class DownloadsRepository(
                         totalBytes = o.optLong("totalBytes", 0L),
                         downloadedBytes = o.optLong("downloadedBytes", 0L),
                         status = if (status == "downloading") "completed" else status,
-                        startedAtMs = o.optLong("startedAtMs", 0L)
+                        startedAtMs = o.optLong("startedAtMs", 0L),
+                        contentUri = o.optString("contentUri").takeIf { it.isNotBlank() && it != "null" }
                     )
                 )
             }
@@ -280,5 +401,20 @@ class DownloadsRepository(
 
     companion object {
         private const val KEY_DOWNLOADS = "records_v1"
+
+        private fun extensionForMime(mime: String): String = when {
+            mime.contains("pdf") -> "pdf"
+            mime.contains("png") -> "png"
+            mime.contains("jpeg") || mime.contains("jpg") -> "jpg"
+            mime.contains("webp") -> "webp"
+            mime.contains("svg") -> "svg"
+            mime.contains("json") -> "json"
+            mime.contains("csv") -> "csv"
+            mime.contains("text/plain") -> "txt"
+            mime.contains("zip") -> "zip"
+            mime.contains("mp4") -> "mp4"
+            mime.contains("mp3") || mime.contains("mpeg") -> "mp3"
+            else -> "bin"
+        }
     }
 }

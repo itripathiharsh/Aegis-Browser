@@ -15,6 +15,7 @@ import { BookmarksDrawer } from './components/BookmarksDrawer';
 import { DownloadsDrawer } from './components/DownloadsDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { HomeStartPage } from './components/HomeStartPage';
+import { LinkContextMenuSheet } from './components/LinkContextMenuSheet';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { ShieldsPanel } from './components/ShieldsPanel';
 import { TabsDrawer } from './components/TabsDrawer';
@@ -22,61 +23,9 @@ import { TopBar, type DrawerKind } from './components/TopBar';
 import { UpdateModal } from './components/UpdateModal';
 import { useDpadNavigation } from './hooks/useDpadNavigation';
 
-const BOOKMARKS_STORAGE_KEY = 'aegis_bookmarks_v2';
+const LEGACY_BOOKMARKS_KEY = 'aegis_bookmarks_v2';
 const ENGINE_STORAGE_KEY = 'aegis_search_engine_v1';
 const THEME_STORAGE_KEY = 'aegis_theme_v1';
-
-const DEFAULT_BOOKMARKS: BookmarkItem[] = [
-  {
-    id: 'bm-yt',
-    title: 'YouTube',
-    url: 'https://m.youtube.com',
-    tag: 'Video',
-    pinned: true,
-  },
-  {
-    id: 'bm-wiki',
-    title: 'Wikipedia',
-    url: 'https://en.wikipedia.org',
-    tag: 'Wiki',
-    pinned: true,
-  },
-  {
-    id: 'bm-github',
-    title: 'GitHub',
-    url: 'https://github.com',
-    tag: 'Code',
-    pinned: true,
-  },
-  {
-    id: 'bm-reddit',
-    title: 'Reddit',
-    url: 'https://www.reddit.com',
-    tag: 'Social',
-    pinned: true,
-  },
-  {
-    id: 'bm-bbc',
-    title: 'BBC News',
-    url: 'https://www.bbc.com',
-    tag: 'News',
-    pinned: true,
-  },
-];
-
-function loadBookmarks(): BookmarkItem[] {
-  try {
-    const raw = localStorage.getItem(BOOKMARKS_STORAGE_KEY);
-    if (!raw) return DEFAULT_BOOKMARKS;
-    const parsed = JSON.parse(raw) as BookmarkItem[];
-    if (!Array.isArray(parsed)) return DEFAULT_BOOKMARKS;
-    // Strip legacy internal Stream Player entries on upgrade
-    const filtered = parsed.filter((b) => !b.url?.startsWith('aegis://player'));
-    return filtered.length > 0 ? filtered : DEFAULT_BOOKMARKS;
-  } catch {
-    return DEFAULT_BOOKMARKS;
-  }
-}
 
 function loadFallbackSearchEngine(): SearchEngineId {
   try {
@@ -90,12 +39,13 @@ function loadFallbackSearchEngine(): SearchEngineId {
 export const App: React.FC = () => {
   const bridge = useMemo(() => getBrowserBridge(), []);
   const [state, setState] = useState<BrowserState>(() => bridge.getState());
-  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(loadBookmarks);
   const [localEngine, setLocalEngine] = useState<SearchEngineId>(
     () => bridge.getState().searchEngine ?? loadFallbackSearchEngine()
   );
   const [activeDrawer, setActiveDrawer] = useState<DrawerKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [omniboxSuggestionsOpen, setOmniboxSuggestionsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<FilterSyncResult | null>(null);
@@ -108,6 +58,39 @@ export const App: React.FC = () => {
 
   const barRef = useRef<HTMLDivElement>(null);
   const omniboxInputRef = useRef<HTMLInputElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMsg(null);
+      toastTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  // One-time migration from legacy localStorage bookmarks into native BrowserDataStore
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LEGACY_BOOKMARKS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as BookmarkItem[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter((b) => !b.url?.startsWith('aegis://player'));
+          if (filtered.length > 0) {
+            bridge.importLegacyBookmarks(filtered);
+          }
+        }
+        localStorage.removeItem(LEGACY_BOOKMARKS_KEY);
+      }
+    } catch {
+      // Ignore malformed legacy storage
+    }
+  }, [bridge]);
+
+  const bookmarks = state.bookmarks ?? [];
 
   const settings: BrowserSettings = useMemo(
     () => ({
@@ -153,6 +136,7 @@ export const App: React.FC = () => {
     activeDrawer !== null ||
     menuOpen ||
     omniboxSuggestionsOpen ||
+    Boolean(state.pendingContextMenu) ||
     isInternalPage ||
     state.appUpdate.popupVisible;
 
@@ -170,13 +154,28 @@ export const App: React.FC = () => {
         : null;
     if (ro && barRef.current) ro.observe(barRef.current);
     return () => ro?.disconnect();
-  }, [bridge, overlayExpanded, activeTab.isLoading]);
+  }, [
+    bridge,
+    overlayExpanded,
+    activeTab.isLoading,
+    activeTab.groupId,
+    state.tabs.length,
+    findBarOpen,
+    state.pendingPermission,
+  ]);
+
+  useEffect(() => {
+    if (isInternalPage && findBarOpen) {
+      setFindBarOpen(false);
+    }
+  }, [findBarOpen, isInternalPage]);
 
   useEffect(() => {
     window.__AEGIS_CLOSE_OVERLAY__ = () => {
       setMenuOpen(false);
       setActiveDrawer(null);
       setOmniboxSuggestionsOpen(false);
+      bridge.dismissContextMenu();
       omniboxInputRef.current?.blur();
     };
     window.__AEGIS_FOCUS_OMNIBOX__ = () => {
@@ -184,21 +183,38 @@ export const App: React.FC = () => {
       omniboxInputRef.current?.select();
     };
     const unsubWebOS = registerWebOSBackHandler(() => {
-      if (menuOpen) setMenuOpen(false);
+      if (state.pendingContextMenu) bridge.dismissContextMenu();
+      else if (menuOpen) setMenuOpen(false);
       else if (activeDrawer !== null) setActiveDrawer(null);
-      else if (omniboxSuggestionsOpen) omniboxInputRef.current?.blur();
+      else if (findBarOpen) {
+        setFindBarOpen(false);
+        bridge.clearFindInPage(activeTab.id);
+      } else if (omniboxSuggestionsOpen) omniboxInputRef.current?.blur();
       else bridge.goBack(activeTab.id);
     });
     return () => unsubWebOS();
-  }, [activeDrawer, activeTab.id, bridge, menuOpen, omniboxSuggestionsOpen]);
+  }, [
+    activeDrawer,
+    activeTab.id,
+    bridge,
+    findBarOpen,
+    menuOpen,
+    omniboxSuggestionsOpen,
+    state.pendingContextMenu,
+  ]);
 
   const handleBackKey = useCallback(() => {
     if (state.appUpdate.popupVisible) {
       bridge.dismissUpdateModal();
+    } else if (state.pendingContextMenu) {
+      bridge.dismissContextMenu();
     } else if (menuOpen) {
       setMenuOpen(false);
     } else if (activeDrawer !== null) {
       setActiveDrawer(null);
+    } else if (findBarOpen) {
+      setFindBarOpen(false);
+      bridge.clearFindInPage(activeTab.id);
     } else if (omniboxSuggestionsOpen) {
       omniboxInputRef.current?.blur();
     } else if (!isInternalPage) {
@@ -208,10 +224,12 @@ export const App: React.FC = () => {
     activeDrawer,
     activeTab.id,
     bridge,
+    findBarOpen,
     isInternalPage,
     menuOpen,
     omniboxSuggestionsOpen,
     state.appUpdate.popupVisible,
+    state.pendingContextMenu,
   ]);
 
   useDpadNavigation({
@@ -219,31 +237,7 @@ export const App: React.FC = () => {
     onExitDownToWebContent: !isInternalPage ? () => bridge.focusContent() : undefined,
   });
 
-  const persistBookmarks = (next: BookmarkItem[]) => {
-    setBookmarks(next);
-    try {
-      localStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Ignore storage quota issues
-    }
-  };
-
-  const addBookmarkItem = (title: string, url: string) => {
-    const cleanUrl = url.trim();
-    if (!cleanUrl || cleanUrl.startsWith('aegis://')) return;
-    if (bookmarks.some((b) => b.url === cleanUrl)) return;
-    persistBookmarks([
-      {
-        id: `bm-${Date.now()}`,
-        title: title.trim() || cleanUrl,
-        url: cleanUrl,
-        tag: 'Saved',
-      },
-      ...bookmarks,
-    ]);
-  };
-
-  // Keep historyEntries synchronized so autocomplete on both Home and TopBar stays instant
+  // Sync History & Downloads so omnibox autocomplete and drawers stay fresh
   useEffect(() => {
     setHistoryEntries(bridge.getHistory());
     if (activeDrawer === 'downloads') {
@@ -275,14 +269,17 @@ export const App: React.FC = () => {
 
   const currentHost = extractHost(activeTab.url);
   const shieldsEnabledForSite = isHostShieldsEnabled(state.shields, currentHost);
-  const isBookmarked = bookmarks.some((b) => b.url === activeTab.url);
+  const existingBookmark = bookmarks.find((b) => b.url === activeTab.url);
+  const isBookmarked = Boolean(existingBookmark);
 
   const handleToggleCurrentBookmark = () => {
     if (isInternalPage) return;
-    if (isBookmarked) {
-      persistBookmarks(bookmarks.filter((b) => b.url !== activeTab.url));
+    if (existingBookmark) {
+      bridge.removeBookmark(existingBookmark.id);
+      showToast('Bookmark removed');
     } else {
-      addBookmarkItem(activeTab.title || currentHost || activeTab.url, activeTab.url);
+      bridge.addBookmark(activeTab.title || currentHost || activeTab.url, activeTab.url);
+      showToast('Saved to bookmarks');
     }
   };
 
@@ -293,7 +290,7 @@ export const App: React.FC = () => {
     >
       <TopBar
         activeTab={activeTab}
-        tabCount={state.tabs.length}
+        allTabs={state.tabs}
         totalBlocked={state.telemetry.totalBlocked}
         downloadsActiveCount={state.downloadsSummary?.activeCount ?? 0}
         shieldsEnabledForSite={shieldsEnabledForSite}
@@ -303,6 +300,9 @@ export const App: React.FC = () => {
         bookmarks={bookmarks}
         activeDrawer={activeDrawer}
         menuOpen={menuOpen}
+        findBarOpen={findBarOpen}
+        findState={state.findState ?? null}
+        pendingPermission={state.pendingPermission ?? null}
         omniboxInputRef={omniboxInputRef}
         barRef={barRef}
         onToggleMenu={setMenuOpen}
@@ -320,6 +320,25 @@ export const App: React.FC = () => {
         onToggleDesktopMode={() =>
           bridge.setDesktopMode(activeTab.id, !activeTab.desktopMode)
         }
+        onToggleReaderMode={() => bridge.toggleReaderMode(activeTab.id)}
+        onNewTab={() => bridge.createTab('aegis://home')}
+        onNewIncognitoTab={() => bridge.createIncognitoTab('aegis://home')}
+        onSwitchTab={(id) => bridge.switchTab(id)}
+        onCloseTab={(id) => bridge.closeTab(id)}
+        onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'aegis://home', true)}
+        onCopyCurrentUrl={() => {
+          bridge.copyText(activeTab.url);
+          showToast('Link copied');
+        }}
+        onShareCurrentUrl={() => bridge.shareUrl(activeTab.url, activeTab.title)}
+        onOpenFindBar={() => setFindBarOpen(true)}
+        onCloseFindBar={() => {
+          setFindBarOpen(false);
+          bridge.clearFindInPage(activeTab.id);
+        }}
+        onFindQueryChange={(q) => bridge.findInPage(activeTab.id, q)}
+        onFindNext={(forward) => bridge.findNextMatch(activeTab.id, forward)}
+        onRespondPermission={(id, allow) => bridge.respondPermissionPrompt(id, allow)}
         onOpenDrawer={(d) => setActiveDrawer((cur) => (cur === d ? null : d))}
       />
 
@@ -329,13 +348,13 @@ export const App: React.FC = () => {
           bookmarks={bookmarks}
           historyEntries={historyEntries}
           searchEngine={searchEngine}
+          incognito={Boolean(activeTab.incognito)}
           onChangeEngine={handleChangeEngine}
           onOpenUrl={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
-          onAddFavorite={addBookmarkItem}
-          onRemoveFavorite={(id) =>
-            persistBookmarks(bookmarks.filter((b) => b.id !== id))
-          }
+          onAddFavorite={(title, url) => bridge.addBookmark(title, url)}
+          onRemoveFavorite={(id) => bridge.removeBookmark(id)}
           onDismissRecommendation={(host) => bridge.dismissRecommendation(host)}
+          onOpenIncognitoTab={() => bridge.createIncognitoTab('aegis://home')}
           onOpenShields={() => setActiveDrawer('shields')}
           onOpenBookmarks={() => setActiveDrawer('bookmarks')}
           onOpenHistory={() => setActiveDrawer('history')}
@@ -383,12 +402,21 @@ export const App: React.FC = () => {
         <TabsDrawer
           tabs={state.tabs}
           activeTabId={state.activeTabId}
+          canReopenClosedTab={Boolean(state.canReopenClosedTab)}
           onSelectTab={(id) => bridge.switchTab(id)}
           onCloseTab={(id) => bridge.closeTab(id)}
           onNewTab={() => {
             bridge.createTab('aegis://home');
             setActiveDrawer(null);
           }}
+          onNewIncognitoTab={() => {
+            bridge.createIncognitoTab('aegis://home');
+            setActiveDrawer(null);
+          }}
+          onReopenClosedTab={() => bridge.reopenClosedTab()}
+          onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'aegis://home', true)}
+          onUngroupTab={(tabId) => bridge.ungroupTab(tabId)}
+          onCloseGroup={(groupId) => bridge.closeTabGroup(groupId)}
           onToggleDesktopMode={(tab) =>
             bridge.setDesktopMode(tab.id, !tab.desktopMode)
           }
@@ -403,10 +431,8 @@ export const App: React.FC = () => {
           currentTitle={activeTab.title}
           searchEngine={searchEngine}
           onOpenBookmark={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
-          onAddBookmark={addBookmarkItem}
-          onRemoveBookmark={(id) =>
-            persistBookmarks(bookmarks.filter((b) => b.id !== id))
-          }
+          onAddBookmark={(title, url) => bridge.addBookmark(title, url)}
+          onRemoveBookmark={(id) => bridge.removeBookmark(id)}
           onClose={() => setActiveDrawer(null)}
         />
       )}
@@ -431,6 +457,7 @@ export const App: React.FC = () => {
       {activeDrawer === 'downloads' && (
         <DownloadsDrawer
           records={downloadRecords}
+          onOpenFile={(id) => bridge.openDownloadedFile(id)}
           onOpenSystemDownloads={() => bridge.openSystemDownloads()}
           onRemoveRecord={(id) => {
             bridge.removeDownload(id);
@@ -477,6 +504,31 @@ export const App: React.FC = () => {
           onTestUrl={(u, host) => bridge.testUrl(u, host)}
           onClose={() => setActiveDrawer(null)}
         />
+      )}
+
+      {state.pendingContextMenu && (
+        <LinkContextMenuSheet
+          menu={state.pendingContextMenu}
+          onOpenNewTab={(url) => bridge.createTab(url)}
+          onOpenInGroup={(sourceId, url) => bridge.openInTabGroup(sourceId, url, false)}
+          onOpenIncognito={(url) => bridge.createIncognitoTab(url)}
+          onCopyLink={(url) => {
+            bridge.copyText(url);
+            showToast('Link copied');
+          }}
+          onShareLink={(url, title) => bridge.shareUrl(url, title)}
+          onDownload={(url) => {
+            bridge.downloadUrl(url);
+            showToast('Download started');
+          }}
+          onDismiss={() => bridge.dismissContextMenu()}
+        />
+      )}
+
+      {toastMsg && (
+        <div className="aegis-toast" role="status" aria-live="polite">
+          {toastMsg}
+        </div>
       )}
 
       {state.appUpdate.popupVisible && (

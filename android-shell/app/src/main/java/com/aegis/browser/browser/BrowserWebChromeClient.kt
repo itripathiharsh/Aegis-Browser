@@ -1,11 +1,14 @@
 package com.aegis.browser.browser
 
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.view.View
+import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -26,7 +29,16 @@ class BrowserWebChromeClient(
     private val onOpenNewPopupTabCb: (url: String, openerTabId: String) -> Unit,
     private val onCloseTabCb: (tabId: String) -> Unit,
     private val onShowFullscreenCb: (view: View, callback: CustomViewCallback) -> Unit,
-    private val onHideFullscreenCb: () -> Unit
+    private val onHideFullscreenCb: () -> Unit,
+    private val onShowFileChooserCb: (
+        callback: ValueCallback<Array<Uri>>,
+        params: FileChooserParams?
+    ) -> Boolean,
+    private val onPermissionRequestedCb: (PermissionRequest) -> Unit,
+    private val onGeolocationRequestedCb: (
+        origin: String,
+        callback: GeolocationPermissions.Callback
+    ) -> Unit
 ) : WebChromeClient() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -46,6 +58,15 @@ class BrowserWebChromeClient(
     override fun onCloseWindow(window: WebView?) {
         super.onCloseWindow(window)
         onCloseTabCb(tabId)
+    }
+
+    override fun onShowFileChooser(
+        webView: WebView?,
+        filePathCallback: ValueCallback<Array<Uri>>?,
+        fileChooserParams: FileChooserParams?
+    ): Boolean {
+        val cb = filePathCallback ?: return false
+        return onShowFileChooserCb(cb, fileChooserParams)
     }
 
     override fun onCreateWindow(
@@ -185,12 +206,23 @@ class BrowserWebChromeClient(
     }
 
     override fun onPermissionRequest(request: PermissionRequest?) {
-        val resources = request?.resources ?: return
-        val allowed = resources.filter { it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID }.toTypedArray()
-        if (allowed.isNotEmpty()) {
-            request.grant(allowed)
-        } else {
-            request.deny()
+        val req = request ?: return
+        val resources = req.resources ?: emptyArray()
+        if (resources.size == 1 && resources[0] == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID) {
+            req.grant(resources)
+            return
         }
+        onPermissionRequestedCb(req)
+    }
+
+    override fun onGeolocationPermissionsShowPrompt(
+        origin: String?,
+        callback: GeolocationPermissions.Callback?
+    ) {
+        if (origin.isNullOrBlank() || callback == null) {
+            callback?.invoke(origin, false, false)
+            return
+        }
+        onGeolocationRequestedCb(origin, callback)
     }
 }

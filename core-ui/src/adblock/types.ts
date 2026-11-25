@@ -83,6 +83,11 @@ export interface TabInfo {
   canGoBack: boolean;
   canGoForward: boolean;
   desktopMode: boolean;
+  incognito?: boolean;
+  readerMode?: boolean;
+  groupId?: string | null;
+  groupTitle?: string | null;
+  groupColor?: string | null;
   blockedCount: number;
 }
 
@@ -112,6 +117,29 @@ export interface BrowserSettings {
   showRecommendations: boolean;
   autoSyncFilters: boolean;
   saveHistory: boolean;
+  textZoom: number;
+  allowSitePermissionPrompts: boolean;
+  restoreTabsOnStart: boolean;
+}
+
+export interface PendingContextMenu {
+  tabId: string;
+  linkUrl: string | null;
+  imageUrl: string | null;
+  title: string | null;
+}
+
+export interface FindState {
+  tabId: string;
+  query: string;
+  activeOrdinal: number;
+  totalMatches: number;
+}
+
+export interface PendingPermissionPrompt {
+  id: string;
+  origin: string;
+  label: string;
 }
 
 export interface HistoryEntry {
@@ -140,6 +168,7 @@ export interface DownloadRecord {
   downloadedBytes: number;
   status: 'downloading' | 'completed' | 'failed';
   startedAtMs: number;
+  contentUri?: string | null;
 }
 
 export interface DownloadsSummary {
@@ -153,8 +182,13 @@ export interface BrowserState {
   settings?: BrowserSettings;
   activeTabId: string;
   tabs: TabInfo[];
+  bookmarks?: BookmarkItem[];
+  canReopenClosedTab?: boolean;
   recommendations?: RecommendedSite[];
   downloadsSummary?: DownloadsSummary;
+  pendingContextMenu?: PendingContextMenu | null;
+  findState?: FindState | null;
+  pendingPermission?: PendingPermissionPrompt | null;
   shields: ShieldsConfig;
   filterStats: FilterStats;
   filterSources: FilterSource[];

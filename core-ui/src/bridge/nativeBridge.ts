@@ -3,6 +3,7 @@ import type {
   AppUpdateState,
   BlockDecision,
   BlockedEvent,
+  BookmarkItem,
   BrowserSettings,
   BrowserState,
   DownloadRecord,
@@ -32,6 +33,26 @@ interface AndroidNativeHost extends WebOSNativeHost {
   deleteHistoryItem?(id: string): void;
   clearHistory?(): void;
   dismissRecommendation?(host: string): void;
+  getBookmarks?(): string;
+  addBookmark?(title: string, url: string, tag?: string): void;
+  removeBookmark?(id: string): void;
+  importLegacyBookmarks?(jsonStr: string): void;
+  createIncognitoTab?(url?: string): void;
+  openInTabGroup?(sourceTabId: string, url: string, makeActive: boolean): void;
+  renameTabGroup?(groupId: string, title: string): void;
+  ungroupTab?(tabId: string): void;
+  closeTabGroup?(groupId: string): void;
+  reopenClosedTab?(): void;
+  shareUrl?(url: string, title?: string): void;
+  copyText?(text: string): void;
+  findInPage?(tabId: string, query: string): void;
+  findNextMatch?(tabId: string, forward: boolean): void;
+  clearFindInPage?(tabId: string): void;
+  toggleReaderMode?(tabId: string): void;
+  dismissContextMenu?(): void;
+  downloadUrl?(url: string): void;
+  openDownloadedFile?(id: string): void;
+  respondPermissionPrompt?(id: string, allow: boolean): void;
   getDownloads?(): string;
   openSystemDownloads?(): void;
   removeDownload?(id: string): void;
@@ -65,9 +86,27 @@ export interface BrowserBridge {
   reload(tabId: string): void;
   stopLoading(tabId: string): void;
   createTab(url?: string): void;
+  createIncognitoTab(url?: string): void;
+  openInTabGroup(sourceTabId: string, url: string, makeActive?: boolean): void;
+  renameTabGroup(groupId: string, title: string): void;
+  ungroupTab(tabId: string): void;
+  closeTabGroup(groupId: string): void;
+  reopenClosedTab(): void;
   switchTab(tabId: string): void;
   closeTab(tabId: string): void;
   setDesktopMode(tabId: string, desktop: boolean): void;
+  toggleReaderMode(tabId: string): void;
+  findInPage(tabId: string, query: string): void;
+  findNextMatch(tabId: string, forward: boolean): void;
+  clearFindInPage(tabId: string): void;
+  dismissContextMenu(): void;
+  respondPermissionPrompt(id: string, allow: boolean): void;
+  shareUrl(url: string, title?: string): void;
+  copyText(text: string): void;
+  getBookmarks(): BookmarkItem[];
+  addBookmark(title: string, url: string, tag?: string): void;
+  removeBookmark(id: string): void;
+  importLegacyBookmarks(items: BookmarkItem[]): void;
   setShieldsConfig(config: ShieldsConfig): void;
   toggleSiteShields(host: string, enabled: boolean): void;
   syncFilterLists(): Promise<void>;
@@ -81,6 +120,8 @@ export interface BrowserBridge {
   clearHistory(): void;
   dismissRecommendation(host: string): void;
   getDownloads(): DownloadRecord[];
+  downloadUrl(url: string): void;
+  openDownloadedFile(id: string): void;
   openSystemDownloads(): void;
   removeDownload(id: string): void;
   clearCompletedDownloads(): void;
@@ -118,28 +159,45 @@ const DEFAULT_UPDATE_STATE: AppUpdateState = {
   checkedAtIso: null,
 };
 
-export const DEFAULT_SETTINGS = {
-  searchEngine: 'duckduckgo' as const,
-  theme: 'dark' as const,
+export const DEFAULT_SETTINGS: BrowserSettings = {
+  searchEngine: 'duckduckgo',
+  theme: 'dark',
   blockThirdPartyCookies: true,
   defaultDesktopMode: false,
   showRecommendations: true,
   autoSyncFilters: true,
   saveHistory: true,
+  textZoom: 100,
+  allowSitePermissionPrompts: true,
+  restoreTabsOnStart: true,
 };
 
+const DEFAULT_PREVIEW_BOOKMARKS: BookmarkItem[] = [
+  { id: 'bm-yt', title: 'YouTube', url: 'https://m.youtube.com', tag: 'Video', pinned: true },
+  { id: 'bm-wiki', title: 'Wikipedia', url: 'https://en.wikipedia.org', tag: 'Wiki', pinned: true },
+  { id: 'bm-github', title: 'GitHub', url: 'https://github.com', tag: 'Code', pinned: true },
+  { id: 'bm-reddit', title: 'Reddit', url: 'https://www.reddit.com', tag: 'Social', pinned: true },
+  { id: 'bm-bbc', title: 'BBC News', url: 'https://www.bbc.com', tag: 'News', pinned: true },
+];
+
 function normalizeBrowserState(raw: BrowserState): BrowserState {
-  const settings = {
+  const settings: BrowserSettings = {
     ...DEFAULT_SETTINGS,
     ...(raw.settings ?? {}),
     searchEngine: raw.settings?.searchEngine ?? raw.searchEngine ?? DEFAULT_SETTINGS.searchEngine,
+    textZoom: raw.settings?.textZoom ?? DEFAULT_SETTINGS.textZoom,
   };
   return {
     ...raw,
     searchEngine: settings.searchEngine,
     settings,
+    bookmarks: raw.bookmarks ?? [],
+    canReopenClosedTab: raw.canReopenClosedTab ?? false,
     recommendations: raw.recommendations ?? [],
     downloadsSummary: raw.downloadsSummary ?? { activeCount: 0, totalCount: 0 },
+    pendingContextMenu: raw.pendingContextMenu ?? null,
+    findState: raw.findState ?? null,
+    pendingPermission: raw.pendingPermission ?? null,
     appUpdate: raw.appUpdate ?? { ...DEFAULT_UPDATE_STATE },
   };
 }
@@ -209,6 +267,42 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
     this.host.createTab(url ?? 'aegis://home');
   }
 
+  createIncognitoTab(url?: string): void {
+    if ('createIncognitoTab' in this.host && typeof this.host.createIncognitoTab === 'function') {
+      this.host.createIncognitoTab(url ?? 'aegis://home');
+    }
+  }
+
+  openInTabGroup(sourceTabId: string, url: string, makeActive = false): void {
+    if ('openInTabGroup' in this.host && typeof this.host.openInTabGroup === 'function') {
+      this.host.openInTabGroup(sourceTabId, url, makeActive);
+    }
+  }
+
+  renameTabGroup(groupId: string, title: string): void {
+    if ('renameTabGroup' in this.host && typeof this.host.renameTabGroup === 'function') {
+      this.host.renameTabGroup(groupId, title);
+    }
+  }
+
+  ungroupTab(tabId: string): void {
+    if ('ungroupTab' in this.host && typeof this.host.ungroupTab === 'function') {
+      this.host.ungroupTab(tabId);
+    }
+  }
+
+  closeTabGroup(groupId: string): void {
+    if ('closeTabGroup' in this.host && typeof this.host.closeTabGroup === 'function') {
+      this.host.closeTabGroup(groupId);
+    }
+  }
+
+  reopenClosedTab(): void {
+    if ('reopenClosedTab' in this.host && typeof this.host.reopenClosedTab === 'function') {
+      this.host.reopenClosedTab();
+    }
+  }
+
   switchTab(tabId: string): void {
     this.host.switchTab(tabId);
   }
@@ -219,6 +313,92 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
 
   setDesktopMode(tabId: string, desktop: boolean): void {
     this.host.setDesktopMode(tabId, desktop);
+  }
+
+  toggleReaderMode(tabId: string): void {
+    if ('toggleReaderMode' in this.host && typeof this.host.toggleReaderMode === 'function') {
+      this.host.toggleReaderMode(tabId);
+    }
+  }
+
+  findInPage(tabId: string, query: string): void {
+    if ('findInPage' in this.host && typeof this.host.findInPage === 'function') {
+      this.host.findInPage(tabId, query);
+    }
+  }
+
+  findNextMatch(tabId: string, forward: boolean): void {
+    if ('findNextMatch' in this.host && typeof this.host.findNextMatch === 'function') {
+      this.host.findNextMatch(tabId, forward);
+    }
+  }
+
+  clearFindInPage(tabId: string): void {
+    if ('clearFindInPage' in this.host && typeof this.host.clearFindInPage === 'function') {
+      this.host.clearFindInPage(tabId);
+    }
+  }
+
+  dismissContextMenu(): void {
+    if ('dismissContextMenu' in this.host && typeof this.host.dismissContextMenu === 'function') {
+      this.host.dismissContextMenu();
+    }
+  }
+
+  respondPermissionPrompt(id: string, allow: boolean): void {
+    if (
+      'respondPermissionPrompt' in this.host &&
+      typeof this.host.respondPermissionPrompt === 'function'
+    ) {
+      this.host.respondPermissionPrompt(id, allow);
+    }
+  }
+
+  shareUrl(url: string, title?: string): void {
+    if ('shareUrl' in this.host && typeof this.host.shareUrl === 'function') {
+      this.host.shareUrl(url, title ?? '');
+    }
+  }
+
+  copyText(text: string): void {
+    if ('copyText' in this.host && typeof this.host.copyText === 'function') {
+      this.host.copyText(text);
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+    }
+  }
+
+  getBookmarks(): BookmarkItem[] {
+    if ('getBookmarks' in this.host && typeof this.host.getBookmarks === 'function') {
+      try {
+        const parsed = JSON.parse(this.host.getBookmarks()) as BookmarkItem[];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return this.cachedState.bookmarks ?? [];
+  }
+
+  addBookmark(title: string, url: string, tag = 'Saved'): void {
+    if ('addBookmark' in this.host && typeof this.host.addBookmark === 'function') {
+      this.host.addBookmark(title, url, tag);
+    }
+  }
+
+  removeBookmark(id: string): void {
+    if ('removeBookmark' in this.host && typeof this.host.removeBookmark === 'function') {
+      this.host.removeBookmark(id);
+    }
+  }
+
+  importLegacyBookmarks(items: BookmarkItem[]): void {
+    if (
+      'importLegacyBookmarks' in this.host &&
+      typeof this.host.importLegacyBookmarks === 'function'
+    ) {
+      this.host.importLegacyBookmarks(JSON.stringify(items));
+    }
   }
 
   setShieldsConfig(config: ShieldsConfig): void {
@@ -314,6 +494,18 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
     return [];
   }
 
+  downloadUrl(url: string): void {
+    if ('downloadUrl' in this.host && typeof this.host.downloadUrl === 'function') {
+      this.host.downloadUrl(url);
+    }
+  }
+
+  openDownloadedFile(id: string): void {
+    if ('openDownloadedFile' in this.host && typeof this.host.openDownloadedFile === 'function') {
+      this.host.openDownloadedFile(id);
+    }
+  }
+
   openSystemDownloads(): void {
     if ('openSystemDownloads' in this.host && typeof this.host.openSystemDownloads === 'function') {
       this.host.openSystemDownloads();
@@ -365,9 +557,6 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   }
 }
 
-/**
- * Pure web / Phase-2 preview bridge running the TypeScript FilterEngine directly.
- */
 class StandalonePreviewBridge implements BrowserBridge {
   readonly isNativeAndroid = false;
   private filterEngine = new FilterEngine();
@@ -377,6 +566,7 @@ class StandalonePreviewBridge implements BrowserBridge {
   private history: HistoryEntry[] = [];
   private recMap = new Map<string, RecommendedSite>();
   private downloads: DownloadRecord[] = [];
+  private closedStack: TabInfo[] = [];
   private state: BrowserState;
 
   constructor() {
@@ -389,6 +579,11 @@ class StandalonePreviewBridge implements BrowserBridge {
       canGoBack: false,
       canGoForward: false,
       desktopMode: false,
+      incognito: false,
+      readerMode: false,
+      groupId: null,
+      groupTitle: null,
+      groupColor: null,
       blockedCount: 0,
     };
 
@@ -398,8 +593,13 @@ class StandalonePreviewBridge implements BrowserBridge {
       settings: { ...DEFAULT_SETTINGS },
       activeTabId: initialTab.id,
       tabs: [initialTab],
+      bookmarks: [...DEFAULT_PREVIEW_BOOKMARKS],
+      canReopenClosedTab: false,
       recommendations: [],
       downloadsSummary: { activeCount: 0, totalCount: 0 },
+      pendingContextMenu: null,
+      findState: null,
+      pendingPermission: null,
       shields: { ...DEFAULT_SHIELDS },
       filterStats: this.filterEngine.getStats(),
       filterSources: [],
@@ -416,13 +616,6 @@ class StandalonePreviewBridge implements BrowserBridge {
     void this.initFilters();
   }
 
-  private buildPreviewRecommendations(): RecommendedSite[] {
-    if (this.state.settings && !this.state.settings.showRecommendations) return [];
-    return Array.from(this.recMap.values())
-      .sort((a, b) => b.visits - a.visits || b.lastVisitedMs - a.lastVisitedMs)
-      .slice(0, 8);
-  }
-
   private async initFilters() {
     const { sources } = await loadBundledAndCachedFilters(this.filterEngine);
     this.sources = sources;
@@ -432,6 +625,13 @@ class StandalonePreviewBridge implements BrowserBridge {
       filterStats: this.filterEngine.getStats(),
     };
     this.emit();
+  }
+
+  private buildPreviewRecommendations(): RecommendedSite[] {
+    if (this.state.settings && !this.state.settings.showRecommendations) return [];
+    return Array.from(this.recMap.values())
+      .sort((a, b) => b.visits - a.visits || b.lastVisitedMs - a.lastVisitedMs)
+      .slice(0, 8);
   }
 
   private emit() {
@@ -455,13 +655,14 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   navigate(tabId: string, rawInput: string, engine: SearchEngineId = 'duckduckgo'): void {
     const resolved = resolveOmniboxInput(rawInput, engine);
+    const activeTarget = this.state.tabs.find((t) => t.id === tabId);
     const tabs = this.state.tabs.map((t) => {
       if (t.id !== tabId) return t;
       const host = extractHost(resolved);
       return {
         ...t,
         url: resolved,
-        title: resolved === 'aegis://home' ? 'Aegis Start' : host ?? resolved,
+        title: resolved === 'aegis://home' ? (t.incognito ? 'Private Tab' : 'Aegis Start') : host ?? resolved,
         canGoBack: resolved !== 'aegis://home',
         isLoading: false,
         progress: 100,
@@ -496,11 +697,10 @@ class StandalonePreviewBridge implements BrowserBridge {
       nextTelemetry.recentEvents = [...newEvents, ...nextTelemetry.recentEvents].slice(0, 30);
     }
 
-    if (!resolved.startsWith('aegis://')) {
+    if (!resolved.startsWith('aegis://') && !activeTarget?.incognito) {
       const host = extractHost(resolved) ?? resolved;
       const now = Date.now();
-      const saveHistory = this.state.settings?.saveHistory ?? true;
-      if (saveHistory) {
+      if (this.state.settings?.saveHistory ?? true) {
         this.history = [
           {
             id: `h-${now}-${Math.random().toString(36).slice(2, 6)}`,
@@ -555,7 +755,7 @@ class StandalonePreviewBridge implements BrowserBridge {
   stopLoading(_tabId: string): void {}
 
   createTab(url?: string): void {
-    const id = `tab-${Date.now().toString(36)}`;
+    const id = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
     const targetUrl = url ?? 'aegis://home';
     const newTab: TabInfo = {
       id,
@@ -566,6 +766,11 @@ class StandalonePreviewBridge implements BrowserBridge {
       canGoBack: false,
       canGoForward: false,
       desktopMode: false,
+      incognito: false,
+      readerMode: false,
+      groupId: null,
+      groupTitle: null,
+      groupColor: null,
       blockedCount: 0,
     };
     this.state = {
@@ -576,17 +781,128 @@ class StandalonePreviewBridge implements BrowserBridge {
     this.emit();
   }
 
+  createIncognitoTab(url?: string): void {
+    const id = `tab-inc-${Date.now().toString(36)}`;
+    const targetUrl = url ?? 'aegis://home';
+    const newTab: TabInfo = {
+      id,
+      title: targetUrl === 'aegis://home' ? 'Private Tab' : extractHost(targetUrl) ?? targetUrl,
+      url: targetUrl,
+      isLoading: false,
+      progress: 100,
+      canGoBack: false,
+      canGoForward: false,
+      desktopMode: false,
+      incognito: true,
+      readerMode: false,
+      groupId: null,
+      groupTitle: null,
+      groupColor: null,
+      blockedCount: 0,
+    };
+    this.state = {
+      ...this.state,
+      activeTabId: id,
+      tabs: [...this.state.tabs, newTab],
+    };
+    this.emit();
+  }
+
+  openInTabGroup(sourceTabId: string, url: string, makeActive = false): void {
+    const source = this.state.tabs.find((t) => t.id === sourceTabId);
+    const gid = source?.groupId ?? `grp-${Date.now().toString(36)}`;
+    const gTitle = source?.groupTitle ?? (extractHost(source?.url ?? '')?.replace(/^www\./, '') || 'Tab Group');
+    const gColor = source?.groupColor ?? '#3B82F6';
+    const newId = `tab-${Date.now().toString(36)}`;
+    const child: TabInfo = {
+      id: newId,
+      title: extractHost(url) ?? url,
+      url,
+      isLoading: false,
+      progress: 100,
+      canGoBack: false,
+      canGoForward: false,
+      desktopMode: false,
+      incognito: false,
+      readerMode: false,
+      groupId: gid,
+      groupTitle: gTitle,
+      groupColor: gColor,
+      blockedCount: 0,
+    };
+    const updated = this.state.tabs.map((t) =>
+      t.id === sourceTabId ? { ...t, groupId: gid, groupTitle: gTitle, groupColor: gColor } : t
+    );
+    this.state = {
+      ...this.state,
+      tabs: [...updated, child],
+      activeTabId: makeActive ? newId : this.state.activeTabId,
+    };
+    this.emit();
+  }
+
+  renameTabGroup(groupId: string, title: string): void {
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) => (t.groupId === groupId ? { ...t, groupTitle: title } : t)),
+    };
+    this.emit();
+  }
+
+  ungroupTab(tabId: string): void {
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId ? { ...t, groupId: null, groupTitle: null, groupColor: null } : t
+      ),
+    };
+    this.emit();
+  }
+
+  closeTabGroup(groupId: string): void {
+    const remaining = this.state.tabs.filter((t) => t.groupId !== groupId);
+    if (remaining.length === 0) {
+      this.createTab('aegis://home');
+      return;
+    }
+    this.state = {
+      ...this.state,
+      tabs: remaining,
+      activeTabId: remaining.some((t) => t.id === this.state.activeTabId)
+        ? this.state.activeTabId
+        : remaining[0].id,
+    };
+    this.emit();
+  }
+
+  reopenClosedTab(): void {
+    const popped = this.closedStack.shift();
+    if (!popped) return;
+    this.state = {
+      ...this.state,
+      tabs: [...this.state.tabs, popped],
+      activeTabId: popped.id,
+      canReopenClosedTab: this.closedStack.length > 0,
+    };
+    this.emit();
+  }
+
   switchTab(tabId: string): void {
     if (!this.state.tabs.some((t) => t.id === tabId)) return;
-    this.state = { ...this.state, activeTabId: tabId };
+    this.state = { ...this.state, activeTabId: tabId, findState: null };
     this.emit();
   }
 
   closeTab(tabId: string): void {
+    const victim = this.state.tabs.find((t) => t.id === tabId);
+    if (victim && !victim.incognito && !victim.url.startsWith('aegis://')) {
+      this.closedStack.unshift(victim);
+      if (this.closedStack.length > 15) this.closedStack.pop();
+    }
     const remaining = this.state.tabs.filter((t) => t.id !== tabId);
     if (remaining.length === 0) {
       this.createTab('aegis://home');
-      remaining.push(...this.state.tabs.slice(-1));
+      return;
     }
     const nextActive =
       this.state.activeTabId === tabId ? remaining[remaining.length - 1].id : this.state.activeTabId;
@@ -594,6 +910,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       ...this.state,
       tabs: remaining,
       activeTabId: nextActive,
+      canReopenClosedTab: this.closedStack.length > 0,
     };
     this.emit();
   }
@@ -605,6 +922,81 @@ class StandalonePreviewBridge implements BrowserBridge {
         t.id === tabId ? { ...t, desktopMode: desktop } : t
       ),
     };
+    this.emit();
+  }
+
+  toggleReaderMode(tabId: string): void {
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId ? { ...t, readerMode: !t.readerMode } : t
+      ),
+    };
+    this.emit();
+  }
+
+  findInPage(tabId: string, query: string): void {
+    this.state = {
+      ...this.state,
+      findState: query ? { tabId, query, activeOrdinal: 1, totalMatches: 1 } : null,
+    };
+    this.emit();
+  }
+
+  findNextMatch(_tabId: string, _forward: boolean): void {}
+
+  clearFindInPage(_tabId: string): void {
+    this.state = { ...this.state, findState: null };
+    this.emit();
+  }
+
+  dismissContextMenu(): void {
+    this.state = { ...this.state, pendingContextMenu: null };
+    this.emit();
+  }
+
+  respondPermissionPrompt(_id: string, _allow: boolean): void {
+    this.state = { ...this.state, pendingPermission: null };
+    this.emit();
+  }
+
+  shareUrl(url: string, title?: string): void {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      void navigator.share({ url, title });
+    }
+  }
+
+  copyText(text: string): void {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+    }
+  }
+
+  getBookmarks(): BookmarkItem[] {
+    return this.state.bookmarks ?? [];
+  }
+
+  addBookmark(title: string, url: string, tag = 'Saved'): void {
+    const cur = this.state.bookmarks ?? [];
+    if (cur.some((b) => b.url === url)) return;
+    this.state = {
+      ...this.state,
+      bookmarks: [{ id: `bm-${Date.now()}`, title, url, tag, pinned: true }, ...cur],
+    };
+    this.emit();
+  }
+
+  removeBookmark(id: string): void {
+    this.state = {
+      ...this.state,
+      bookmarks: (this.state.bookmarks ?? []).filter((b) => b.id !== id && b.url !== id),
+    };
+    this.emit();
+  }
+
+  importLegacyBookmarks(items: BookmarkItem[]): void {
+    if (items.length === 0) return;
+    this.state = { ...this.state, bookmarks: items };
     this.emit();
   }
 
@@ -691,6 +1083,8 @@ class StandalonePreviewBridge implements BrowserBridge {
     return this.downloads;
   }
 
+  downloadUrl(_url: string): void {}
+  openDownloadedFile(_id: string): void {}
   openSystemDownloads(): void {}
 
   removeDownload(id: string): void {

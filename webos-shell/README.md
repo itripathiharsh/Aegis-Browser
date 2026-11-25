@@ -12,4 +12,4 @@ This directory prepares Aegis Browser for LG webOS (`WebOS-Chromium` + `@webosos
 
 1. Build `core-ui`: `npm run build` (with `core-ui/public/filters` synced from `shared-filters/`).
 2. Copy `core-ui/dist/*` alongside `webos-shell/appinfo.json` and launcher icons into `webos-shell/dist/`.
-3. Package using open-source webOS CLI (`ares-package webos-shell/dist`) inside GitHub Actions `ubuntu-latest` to output `io.github.itripathiharsh.aegis_1.0.5_all.ipk`.
+3. Package using open-source webOS CLI (`ares-package webos-shell/dist`) inside GitHub Actions `ubuntu-latest` to output `io.github.itripathiharsh.aegis_1.0.6_all.ipk`.
