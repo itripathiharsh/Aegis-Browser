@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { SearchEngineId, TabInfo } from '../adblock/types';
 import { SEARCH_ENGINES, formatDisplayUrl } from '../utils/urlResolver';
 import {
+  DownloadIcon,
+  HistoryIcon,
+  SettingsIcon,
+} from './BrowserIcons';
+import {
   BackIcon,
   BookmarkIcon,
   DesktopIcon,
@@ -15,14 +20,23 @@ import {
   StopIcon,
 } from './Icons';
 
+export type DrawerKind =
+  | 'tabs'
+  | 'bookmarks'
+  | 'shields'
+  | 'history'
+  | 'downloads'
+  | 'settings';
+
 interface TopBarProps {
   activeTab: TabInfo;
   tabCount: number;
   totalBlocked: number;
+  downloadsActiveCount?: number;
   shieldsEnabledForSite: boolean;
   isBookmarked: boolean;
   searchEngine: SearchEngineId;
-  activeDrawer: 'tabs' | 'bookmarks' | 'shields' | null;
+  activeDrawer: DrawerKind | null;
   menuOpen: boolean;
   omniboxInputRef: React.RefObject<HTMLInputElement>;
   barRef: React.RefObject<HTMLDivElement>;
@@ -34,14 +48,14 @@ interface TopBarProps {
   onGoHome: () => void;
   onToggleBookmark: () => void;
   onToggleDesktopMode: () => void;
-  onCheckUpdates: () => void;
-  onOpenDrawer: (drawer: 'tabs' | 'bookmarks' | 'shields') => void;
+  onOpenDrawer: (drawer: DrawerKind) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
   activeTab,
   tabCount,
   totalBlocked,
+  downloadsActiveCount = 0,
   shieldsEnabledForSite,
   isBookmarked,
   searchEngine,
@@ -57,7 +71,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onGoHome,
   onToggleBookmark,
   onToggleDesktopMode,
-  onCheckUpdates,
   onOpenDrawer,
 }) => {
   const [draft, setDraft] = useState('');
@@ -181,14 +194,26 @@ export const TopBar: React.FC<TopBarProps> = ({
             </>
           ) : (
             !isInternal && (
-              <button
-                type="button"
-                className="omnibox-inline-btn"
-                aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
-                onClick={onReloadOrStop}
-              >
-                {activeTab.isLoading ? <StopIcon size={16} /> : <ReloadIcon size={16} />}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="omnibox-inline-btn omnibox-bookmark-btn"
+                  data-bookmarked={isBookmarked ? 'true' : 'false'}
+                  aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+                  title={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+                  onClick={onToggleBookmark}
+                >
+                  <BookmarkIcon size={16} filled={isBookmarked} />
+                </button>
+                <button
+                  type="button"
+                  className="omnibox-inline-btn"
+                  aria-label={activeTab.isLoading ? 'Stop loading' : 'Reload page'}
+                  onClick={onReloadOrStop}
+                >
+                  {activeTab.isLoading ? <StopIcon size={16} /> : <ReloadIcon size={16} />}
+                </button>
+              </>
             )
           )}
         </form>
@@ -320,6 +345,37 @@ export const TopBar: React.FC<TopBarProps> = ({
               </span>
             </button>
 
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onToggleMenu(false);
+                onOpenDrawer('history');
+              }}
+            >
+              <span className="menu-item-left">
+                <HistoryIcon size={17} />
+                <span>History</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                onToggleMenu(false);
+                onOpenDrawer('downloads');
+              }}
+            >
+              <span className="menu-item-left">
+                <DownloadIcon size={17} />
+                <span>Downloads</span>
+              </span>
+              {downloadsActiveCount > 0 && (
+                <span className="menu-badge">{downloadsActiveCount}</span>
+              )}
+            </button>
+
             {!isInternal && (
               <button
                 type="button"
@@ -370,12 +426,12 @@ export const TopBar: React.FC<TopBarProps> = ({
               className="menu-item"
               onClick={() => {
                 onToggleMenu(false);
-                onCheckUpdates();
+                onOpenDrawer('settings');
               }}
             >
               <span className="menu-item-left">
-                <ReloadIcon size={17} />
-                <span>Check for Updates</span>
+                <SettingsIcon size={17} />
+                <span>Settings</span>
               </span>
             </button>
           </nav>

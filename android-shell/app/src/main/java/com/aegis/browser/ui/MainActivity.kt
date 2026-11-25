@@ -28,6 +28,8 @@ import com.aegis.browser.adblock.FilterListUpdater
 import com.aegis.browser.adblock.ShieldsConfig
 import com.aegis.browser.adblock.ShieldsTelemetry
 import com.aegis.browser.bridge.NativeBridge
+import com.aegis.browser.browser.BrowserDataStore
+import com.aegis.browser.browser.DownloadsRepository
 import com.aegis.browser.browser.TabManager
 import com.aegis.browser.updater.AppUpdater
 import kotlinx.coroutines.CoroutineScope
@@ -36,12 +38,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val initialFiltersLatch = CountDownLatch(1)
 
     private lateinit var rootFrame: FrameLayout
     private lateinit var browserStack: LinearLayout
@@ -53,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filterUpdater: FilterListUpdater
     private lateinit var telemetry: ShieldsTelemetry
     private lateinit var appUpdater: AppUpdater
+    private lateinit var dataStore: BrowserDataStore
+    private lateinit var downloadsRepo: DownloadsRepository
     private lateinit var tabManager: TabManager
     private lateinit var nativeBridge: NativeBridge
 
@@ -83,16 +91,34 @@ class MainActivity : AppCompatActivity() {
             isAppearanceLightNavigationBars = false
         }
 
-        lastBarHeightPx = dpToPx(56)
+        lastBarHeightPx = dpToPx(54)
 
         adBlockEngine = AdBlockEngine()
         adBlockEngine.updateConfig(loadShieldsConfig())
         filterUpdater = FilterListUpdater(applicationContext, adBlockEngine)
-        adBlockEngine.loadFromContext(applicationContext, filterUpdater.getLastUpdatedIso())
+        dataStore = BrowserDataStore(applicationContext)
+
+        // Compile 52,000+ bundled rules off the main thread so cold launch feels instant
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    adBlockEngine.loadFromContext(applicationContext, filterUpdater.getLastUpdatedIso())
+                } finally {
+                    initialFiltersLatch.countDown()
+                }
+            }
+            scheduleStatePush()
+        }
 
         telemetry = ShieldsTelemetry {
             scheduleStatePush()
         }
+
+        downloadsRepo = DownloadsRepository(
+            context = applicationContext,
+            scope = scope,
+            onChanged = { scheduleStatePush() }
+        )
 
         appUpdater = AppUpdater(
             context = this,
@@ -181,7 +207,8 @@ class MainActivity : AppCompatActivity() {
             container = contentContainer,
             adBlockEngine = adBlockEngine,
             telemetry = telemetry,
-            initialSearchEngine = loadSearchEngine(),
+            dataStore = dataStore,
+            downloadsRepo = downloadsRepo,
             onTabsUpdated = {
                 updateViewportSplit()
                 scheduleStatePush()
@@ -202,8 +229,9 @@ class MainActivity : AppCompatActivity() {
             filterUpdater = filterUpdater,
             telemetry = telemetry,
             appUpdater = appUpdater,
+            dataStore = dataStore,
+            downloadsRepo = downloadsRepo,
             saveShieldsConfig = { cfg -> persistShieldsConfig(cfg) },
-            saveSearchEngine = { eng -> persistSearchEngine(eng) },
             onLayoutModeChanged = { expanded, barHeightPx ->
                 overlayExpanded = expanded
                 if (barHeightPx in dpToPx(44)..dpToPx(240)) {
@@ -232,10 +260,12 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             delay(1500L)
             appUpdater.checkForUpdates(manual = false)
-            delay(1500L)
-            val syncResult = filterUpdater.syncIfStale(24L * 3600_000L)
-            if (syncResult != null && syncResult.syncedSources > 0) {
-                scheduleStatePush()
+            delay(2000L)
+            if (dataStore.getSettings().autoSyncFilters) {
+                val syncResult = filterUpdater.syncIfStale(24L * 3600_000L)
+                if (syncResult != null && syncResult.syncedSources > 0) {
+                    scheduleStatePush()
+                }
             }
         }
 
@@ -267,6 +297,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     internal fun getNativeBridgeForTesting(): NativeBridge = nativeBridge
+
+    internal fun awaitInitialFiltersForTesting(timeoutMs: Long = 5000L): Boolean =
+        initialFiltersLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureChromeUiWebView() {
@@ -401,7 +434,7 @@ class MainActivity : AppCompatActivity() {
     private fun scheduleStatePush() {
         if (!uiReady || pushScheduled) return
         pushScheduled = true
-        mainHandler.postDelayed(pushRunnable, 120L)
+        mainHandler.postDelayed(pushRunnable, 220L)
     }
 
     private fun pushStateToUiImmediate() {
@@ -413,17 +446,6 @@ class MainActivity : AppCompatActivity() {
             "window.__AEGIS_ON_STATE__ && window.__AEGIS_ON_STATE__($json);",
             null
         )
-    }
-
-    private fun loadSearchEngine(): String =
-        getSharedPreferences("aegis_shields", MODE_PRIVATE)
-            .getString("search_engine", "duckduckgo") ?: "duckduckgo"
-
-    private fun persistSearchEngine(engineId: String) {
-        getSharedPreferences("aegis_shields", MODE_PRIVATE)
-            .edit()
-            .putString("search_engine", engineId)
-            .apply()
     }
 
     private fun loadShieldsConfig(): ShieldsConfig {

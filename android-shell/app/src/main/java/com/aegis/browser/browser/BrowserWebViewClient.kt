@@ -18,14 +18,18 @@ class BrowserWebViewClient(
     private val adBlockEngine: AdBlockEngine,
     private val telemetry: ShieldsTelemetry,
     private val isAutoPopupTab: () -> Boolean,
+    private val isDesktopMode: () -> Boolean,
     private val onAutoClosePopupTab: (tabId: String, blockedUrl: String, rule: String) -> Unit,
+    private val onVisitRecorded: (tabId: String, url: String, title: String?, host: String?) -> Unit,
     private val onStateChanged: (tabId: String, url: String, loading: Boolean, canBack: Boolean, canForward: Boolean) -> Unit
 ) : WebViewClient() {
 
     private val currentPageUrl = AtomicReference<String?>(null)
+    private val currentPageHost = AtomicReference<String?>(null)
 
     fun updateTrackedUrl(url: String?) {
         currentPageUrl.set(url)
+        currentPageHost.set(AdBlockEngine.extractHost(url))
     }
 
     override fun shouldInterceptRequest(
@@ -50,7 +54,7 @@ class BrowserWebViewClient(
             ) {
                 logAndMaybeClosePopup(
                     url = requestUrl,
-                    pageUrl = pageUrl,
+                    pageHost = currentPageHost.get(),
                     rule = "heuristic:popup-redirect",
                     category = BlockCategory.POPUP,
                     closeIfPopup = true
@@ -63,7 +67,7 @@ class BrowserWebViewClient(
         val rule = decision.matchedRule ?: "filter"
         logAndMaybeClosePopup(
             url = requestUrl,
-            pageUrl = pageUrl,
+            pageHost = currentPageHost.get(),
             rule = rule,
             category = decision.category,
             closeIfPopup = req.isForMainFrame
@@ -89,7 +93,7 @@ class BrowserWebViewClient(
         if (decision.blocked) {
             logAndMaybeClosePopup(
                 url = targetUrl,
-                pageUrl = pageUrl,
+                pageHost = currentPageHost.get(),
                 rule = decision.matchedRule ?: "navigation-guard",
                 category = BlockCategory.POPUP,
                 closeIfPopup = true
@@ -102,7 +106,7 @@ class BrowserWebViewClient(
             if (isAutoPopupTab()) {
                 logAndMaybeClosePopup(
                     url = targetUrl,
-                    pageUrl = pageUrl,
+                    pageHost = currentPageHost.get(),
                     rule = "scheme:${lower.substringBefore(':')}",
                     category = BlockCategory.POPUP,
                     closeIfPopup = true
@@ -125,7 +129,7 @@ class BrowserWebViewClient(
                 if (navCheck.blocked || AdBlockEngine.isSuspiciousAdRedirectUrl(url.lowercase())) {
                     logAndMaybeClosePopup(
                         url = url,
-                        pageUrl = currentPageUrl.get(),
+                        pageHost = currentPageHost.get(),
                         rule = navCheck.matchedRule ?: "popup-landed-redirect",
                         category = BlockCategory.POPUP,
                         closeIfPopup = true
@@ -133,7 +137,7 @@ class BrowserWebViewClient(
                     return
                 }
             }
-            currentPageUrl.set(url)
+            updateTrackedUrl(url)
             telemetry.resetTabCount(tabId)
             onStateChanged(
                 tabId,
@@ -142,14 +146,18 @@ class BrowserWebViewClient(
                 view?.canGoBack() ?: false,
                 view?.canGoForward() ?: false
             )
-            injectCosmeticAndScriptlets(view, url)
+            injectPageHelpers(view, url)
         }
     }
 
     override fun onPageCommitVisible(view: WebView?, url: String?) {
         super.onPageCommitVisible(view, url)
         if (!url.isNullOrBlank()) {
-            injectCosmeticAndScriptlets(view, url)
+            updateTrackedUrl(url)
+            injectPageHelpers(view, url)
+            if (!isAutoPopupTab()) {
+                onVisitRecorded(tabId, url, view?.title, currentPageHost.get())
+            }
         }
     }
 
@@ -157,8 +165,11 @@ class BrowserWebViewClient(
         super.onPageFinished(view, url)
         val finalUrl = url ?: currentPageUrl.get() ?: ""
         if (finalUrl.isNotBlank()) {
-            currentPageUrl.set(finalUrl)
-            injectCosmeticAndScriptlets(view, finalUrl)
+            updateTrackedUrl(finalUrl)
+            injectPageHelpers(view, finalUrl)
+            if (!isAutoPopupTab()) {
+                onVisitRecorded(tabId, finalUrl, view?.title, currentPageHost.get())
+            }
         }
         onStateChanged(
             tabId,
@@ -172,7 +183,7 @@ class BrowserWebViewClient(
     override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
         super.doUpdateVisitedHistory(view, url, isReload)
         if (!url.isNullOrBlank()) {
-            currentPageUrl.set(url)
+            updateTrackedUrl(url)
             onStateChanged(
                 tabId,
                 url,
@@ -185,19 +196,18 @@ class BrowserWebViewClient(
 
     private fun logAndMaybeClosePopup(
         url: String,
-        pageUrl: String?,
+        pageHost: String?,
         rule: String,
         category: BlockCategory,
         closeIfPopup: Boolean
     ) {
         val host = AdBlockEngine.extractHost(url) ?: url
-        val pageHost = AdBlockEngine.extractHost(pageUrl) ?: ""
         telemetry.recordBlocked(
             tabId = tabId,
             event = BlockedEvent(
                 url = url,
                 host = host,
-                pageHost = pageHost,
+                pageHost = pageHost ?: "",
                 rule = rule,
                 category = category,
                 timestampMs = System.currentTimeMillis()
@@ -208,10 +218,14 @@ class BrowserWebViewClient(
         }
     }
 
-    private fun injectCosmeticAndScriptlets(view: WebView?, pageUrl: String) {
+    private fun injectPageHelpers(view: WebView?, pageUrl: String) {
         if (view == null) return
+        if (isDesktopMode()) {
+            view.evaluateJavascript(DESKTOP_VIEWPORT_SCRIPT, null)
+        }
+
         val cfg = adBlockEngine.getConfig()
-        val host = AdBlockEngine.extractHost(pageUrl)
+        val host = currentPageHost.get() ?: AdBlockEngine.extractHost(pageUrl)
         if (!cfg.enabled || !cfg.isEnabledForHost(host)) return
 
         val selectors = if (cfg.cosmeticFiltering) {
@@ -299,7 +313,7 @@ class BrowserWebViewClient(
                     "OK",
                     headers,
                     ByteArrayInputStream(
-                        "<!doctype html><html><head><style>html,body{margin:0;padding:0;background:#090C10;display:none!important;}</style></head><body></body></html>".toByteArray()
+                        "<!doctype html><html><head><style>html,body{margin:0;padding:0;background:#0B0E14;display:none!important;}</style></head><body></body></html>".toByteArray()
                     )
                 )
             }
@@ -317,6 +331,22 @@ class BrowserWebViewClient(
     }
 
     companion object {
+        private const val DESKTOP_VIEWPORT_SCRIPT = """
+            (function(){
+              try {
+                var head = document.head || document.documentElement;
+                if (!head) return;
+                var m = document.querySelector('meta[name="viewport"]');
+                if (!m) {
+                  m = document.createElement('meta');
+                  m.name = 'viewport';
+                  head.appendChild(m);
+                }
+                m.setAttribute('content', 'width=1180, user-scalable=yes');
+              } catch(_) {}
+            })();
+        """
+
         private val TRANSPARENT_GIF_1X1 = byteArrayOf(
             0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00,
             0x80.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(),

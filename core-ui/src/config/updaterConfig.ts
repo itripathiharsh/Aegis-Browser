@@ -7,4 +7,4 @@ export const AEGIS_GITHUB_REPO: string =
   import.meta.env.VITE_AEGIS_GITHUB_REPO ?? 'itripathiharsh/Aegis-Browser';
 
 export const AEGIS_APP_VERSION: string =
-  import.meta.env.VITE_AEGIS_APP_VERSION ?? '1.0.3';
+  import.meta.env.VITE_AEGIS_APP_VERSION ?? '1.0.4';

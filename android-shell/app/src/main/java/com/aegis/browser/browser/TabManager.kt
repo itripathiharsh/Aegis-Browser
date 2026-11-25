@@ -9,12 +9,17 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.webkit.UserAgentMetadata
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.aegis.browser.adblock.AdBlockEngine
 import com.aegis.browser.adblock.ShieldsTelemetry
 import java.net.URLEncoder
 import java.util.UUID
+import kotlin.math.abs
 
 data class TabSession(
     val id: String,
@@ -40,7 +45,8 @@ class TabManager(
     private val container: FrameLayout,
     private val adBlockEngine: AdBlockEngine,
     private val telemetry: ShieldsTelemetry,
-    initialSearchEngine: String = "duckduckgo",
+    private val dataStore: BrowserDataStore,
+    private val downloadsRepo: DownloadsRepository,
     private val onTabsUpdated: () -> Unit,
     private val onShowFullscreen: (View, WebChromeClient.CustomViewCallback) -> Unit,
     private val onHideFullscreen: () -> Unit
@@ -51,14 +57,7 @@ class TabManager(
     @Volatile
     private var activeTabId: String = ""
 
-    @Volatile
-    private var searchEngine: String = normalizeEngine(initialSearchEngine)
-
-    fun setSearchEngine(engineId: String) {
-        searchEngine = normalizeEngine(engineId)
-    }
-
-    fun getSearchEngine(): String = searchEngine
+    fun getSearchEngine(): String = dataStore.getSettings().searchEngine
 
     fun ensureInitialTab() {
         val isEmpty = synchronized(tabsLock) { tabs.isEmpty() }
@@ -82,16 +81,24 @@ class TabManager(
         isAutoPopup: Boolean = false
     ): TabSession {
         val id = "tab-" + UUID.randomUUID().toString().take(8)
-        val resolved = if (initialInput.isNullOrBlank()) {
+        val settings = dataStore.getSettings()
+        val rawResolved = if (initialInput.isNullOrBlank()) {
             "aegis://home"
         } else {
-            resolveUserInput(initialInput, searchEngine)
+            resolveUserInput(initialInput, settings.searchEngine)
+        }
+        val desktop = settings.defaultDesktopMode
+        val resolved = if (desktop && !rawResolved.startsWith("aegis://")) {
+            rewriteUrlForMode(rawResolved, desktop = true)
+        } else {
+            rawResolved
         }
         val title = if (resolved == "aegis://home") "Aegis Start" else resolved
         val session = TabSession(
             id = id,
             title = title,
             url = resolved,
+            desktopMode = desktop,
             openerTabId = openerTabId,
             isAutoPopup = isAutoPopup,
             openedAtMs = if (isAutoPopup) System.currentTimeMillis() else 0L
@@ -185,7 +192,12 @@ class TabManager(
 
     fun navigate(tabId: String, rawInput: String) {
         val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
-        val resolved = resolveUserInput(rawInput, searchEngine)
+        val rawResolved = resolveUserInput(rawInput, dataStore.getSettings().searchEngine)
+        val resolved = if (tab.desktopMode && !rawResolved.startsWith("aegis://")) {
+            rewriteUrlForMode(rawResolved, desktop = true)
+        } else {
+            rawResolved
+        }
         tab.isAutoPopup = false
         tab.url = resolved
         if (resolved.startsWith("aegis://")) {
@@ -242,11 +254,43 @@ class TabManager(
     fun setDesktopMode(tabId: String, desktop: Boolean) {
         val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         tab.desktopMode = desktop
+        val currentUrl = tab.url
+        val targetUrl = if (!tab.isInternalPage) {
+            rewriteUrlForMode(currentUrl, desktop)
+        } else {
+            currentUrl
+        }
+        tab.url = targetUrl
+
         tab.webView?.let { wv ->
-            applyUserAgent(wv.settings, desktop)
-            wv.reload()
+            applyUserAgentAndViewport(wv, desktop)
+            if (!tab.isInternalPage) {
+                tab.webViewClient?.updateTrackedUrl(targetUrl)
+                wv.loadUrl(targetUrl)
+            }
         }
         onTabsUpdated()
+    }
+
+    fun applyCookiePolicyToAllTabs() {
+        val acceptThirdParty = !dataStore.getSettings().blockThirdPartyCookies
+        val cm = CookieManager.getInstance()
+        getTabs().forEach { tab ->
+            tab.webView?.let { wv ->
+                cm.setAcceptThirdPartyCookies(wv, acceptThirdParty)
+            }
+        }
+    }
+
+    fun clearAllCachesAndCookies() {
+        runCatching {
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            WebStorage.getInstance().deleteAllData()
+        }
+        getTabs().forEach { tab ->
+            tab.webView?.clearCache(true)
+        }
     }
 
     fun focusActiveWebView() {
@@ -307,7 +351,7 @@ class TabManager(
     @SuppressLint("SetJavaScriptEnabled")
     private fun createContentWebView(tab: TabSession): WebView {
         val wv = WebView(context)
-        wv.setBackgroundColor(Color.parseColor("#090C10"))
+        wv.setBackgroundColor(Color.parseColor("#0B0E14"))
         wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         wv.isFocusable = true
         wv.isFocusableInTouchMode = true
@@ -325,9 +369,22 @@ class TabManager(
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         settings.allowFileAccess = false
         settings.allowContentAccess = false
-        applyUserAgent(settings, tab.desktopMode)
+        applyUserAgentAndViewport(wv, tab.desktopMode)
 
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(
+            wv,
+            !dataStore.getSettings().blockThirdPartyCookies
+        )
+
+        wv.setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+            downloadsRepo.startWebDownload(
+                url = url,
+                userAgent = userAgent,
+                contentDisposition = contentDisposition,
+                mimeType = mimetype,
+                contentLength = contentLength
+            )
+        }
 
         val client = BrowserWebViewClient(
             tabId = tab.id,
@@ -338,8 +395,17 @@ class TabManager(
                 target != null && target.isAutoPopup &&
                     (System.currentTimeMillis() - target.openedAtMs) < 15_000L
             },
+            isDesktopMode = {
+                synchronized(tabsLock) { tabs.find { it.id == tab.id }?.desktopMode } ?: false
+            },
             onAutoClosePopupTab = { id, _, _ ->
                 wv.post { closePopupAndReturnToOpener(id) }
+            },
+            onVisitRecorded = { id, visitedUrl, pageTitle, host ->
+                val target = synchronized(tabsLock) { tabs.find { it.id == id } }
+                if (target != null && !target.isInternalPage) {
+                    dataStore.recordVisit(visitedUrl, pageTitle ?: target.title, host)
+                }
             },
             onStateChanged = { id, updatedUrl, loading, canBack, canForward ->
                 val target = synchronized(tabsLock) { tabs.find { it.id == id } } ?: return@BrowserWebViewClient
@@ -360,15 +426,17 @@ class TabManager(
             onProgressChangedCb = { id, progress ->
                 val target = synchronized(tabsLock) { tabs.find { it.id == id } }
                 target?.let { t ->
+                    val shouldPush = progress >= 100 || progress <= 15 || abs(progress - t.progress) >= 15
                     t.progress = progress
                     if (progress >= 100) t.isLoading = false
-                    onTabsUpdated()
+                    if (shouldPush) onTabsUpdated()
                 }
             },
             onTitleChangedCb = { id, title ->
                 val target = synchronized(tabsLock) { tabs.find { it.id == id } }
                 target?.let { t ->
                     t.title = title
+                    dataStore.updateVisitTitle(t.url, title)
                     onTabsUpdated()
                 }
             },
@@ -390,18 +458,51 @@ class TabManager(
         return wv
     }
 
-    private fun applyUserAgent(settings: WebSettings, desktop: Boolean) {
+    private fun applyUserAgentAndViewport(wv: WebView, desktop: Boolean) {
+        val settings = wv.settings
         val defaultUa = runCatching { WebSettings.getDefaultUserAgent(context) }.getOrNull()
-            ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+            ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+
         if (desktop) {
-            settings.userAgentString =
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            settings.userAgentString = DESKTOP_USER_AGENT
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+            settings.textZoom = 100
+            runCatching { wv.setInitialScale(40) }
+            runCatching {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+                    val meta = UserAgentMetadata.Builder()
+                        .setMobile(false)
+                        .setPlatform("Windows")
+                        .setArchitecture("x86")
+                        .setBitness(64)
+                        .build()
+                    WebSettingsCompat.setUserAgentMetadata(settings, meta)
+                }
+            }
         } else {
             settings.userAgentString = defaultUa.replace("; wv", "")
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.textZoom = 100
+            runCatching { wv.setInitialScale(0) }
+            runCatching {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+                    val meta = UserAgentMetadata.Builder()
+                        .setMobile(true)
+                        .setPlatform("Android")
+                        .build()
+                    WebSettingsCompat.setUserAgentMetadata(settings, meta)
+                }
+            }
         }
     }
 
     companion object {
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
         private val ENGINE_TEMPLATES = mapOf(
             "brave" to "https://search.brave.com/search?q=",
             "duckduckgo" to "https://duckduckgo.com/?q=",
@@ -412,6 +513,26 @@ class TabManager(
         fun normalizeEngine(raw: String?): String {
             val clean = raw?.trim()?.lowercase().orEmpty()
             return if (clean in ENGINE_TEMPLATES) clean else "duckduckgo"
+        }
+
+        fun rewriteUrlForMode(url: String, desktop: Boolean): String {
+            val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return url
+            val host = uri.host?.lowercase() ?: return url
+            val newHost = if (desktop) {
+                when {
+                    host == "m.youtube.com" -> "www.youtube.com"
+                    host.startsWith("mobile.") -> "www." + host.removePrefix("mobile.")
+                    host.startsWith("m.") && host != "m.me" -> "www." + host.removePrefix("m.")
+                    else -> host
+                }
+            } else {
+                when {
+                    host == "www.youtube.com" -> "m.youtube.com"
+                    else -> host
+                }
+            }
+            if (newHost == host) return url
+            return uri.buildUpon().authority(newHost).build().toString()
         }
 
         fun resolveUserInput(raw: String, engineId: String = "duckduckgo"): String {

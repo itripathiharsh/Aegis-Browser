@@ -5,6 +5,9 @@ import com.aegis.browser.adblock.AdBlockEngine
 import com.aegis.browser.adblock.FilterListUpdater
 import com.aegis.browser.adblock.ShieldsConfig
 import com.aegis.browser.adblock.ShieldsTelemetry
+import com.aegis.browser.browser.BrowserDataStore
+import com.aegis.browser.browser.BrowserSettings
+import com.aegis.browser.browser.DownloadsRepository
 import com.aegis.browser.browser.TabManager
 import com.aegis.browser.updater.AppUpdater
 import kotlinx.coroutines.CoroutineScope
@@ -20,8 +23,9 @@ class NativeBridge(
     private val filterUpdater: FilterListUpdater,
     private val telemetry: ShieldsTelemetry,
     private val appUpdater: AppUpdater,
+    private val dataStore: BrowserDataStore,
+    private val downloadsRepo: DownloadsRepository,
     private val saveShieldsConfig: (ShieldsConfig) -> Unit,
-    private val saveSearchEngine: (String) -> Unit,
     private val onLayoutModeChanged: (expanded: Boolean, barHeightPx: Int) -> Unit,
     private val onPushStateToUi: () -> Unit,
     private val onFilterSyncCompleted: (String) -> Unit
@@ -77,10 +81,29 @@ class NativeBridge(
 
     @JavascriptInterface
     fun setSearchEngine(engineId: String) {
-        val normalized = TabManager.normalizeEngine(engineId)
-        tabManager.setSearchEngine(normalized)
-        saveSearchEngine(normalized)
+        dataStore.setSearchEngine(engineId)
         runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun updateSettings(jsonStr: String) {
+        runCatching {
+            val obj = JSONObject(jsonStr)
+            val cur = dataStore.getSettings()
+            val next = BrowserSettings(
+                searchEngine = obj.optString("searchEngine", cur.searchEngine),
+                blockThirdPartyCookies = obj.optBoolean("blockThirdPartyCookies", cur.blockThirdPartyCookies),
+                defaultDesktopMode = obj.optBoolean("defaultDesktopMode", cur.defaultDesktopMode),
+                showRecommendations = obj.optBoolean("showRecommendations", cur.showRecommendations),
+                autoSyncFilters = obj.optBoolean("autoSyncFilters", cur.autoSyncFilters),
+                saveHistory = obj.optBoolean("saveHistory", cur.saveHistory)
+            )
+            dataStore.updateSettings(next)
+            runOnUi {
+                tabManager.applyCookiePolicyToAllTabs()
+                onPushStateToUi()
+            }
+        }
     }
 
     @JavascriptInterface
@@ -164,6 +187,47 @@ class NativeBridge(
     }
 
     @JavascriptInterface
+    fun getHistory(): String = dataStore.getHistoryJson().toString()
+
+    @JavascriptInterface
+    fun deleteHistoryItem(id: String) {
+        dataStore.deleteHistoryEntry(id)
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun clearHistory() {
+        dataStore.clearHistoryAndRecommendations()
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun getDownloads(): String = downloadsRepo.getRecordsJson().toString()
+
+    @JavascriptInterface
+    fun openSystemDownloads() {
+        runOnUi { downloadsRepo.openSystemDownloads() }
+    }
+
+    @JavascriptInterface
+    fun removeDownload(id: String) {
+        downloadsRepo.removeEntry(id)
+    }
+
+    @JavascriptInterface
+    fun clearCompletedDownloads() {
+        downloadsRepo.clearCompleted()
+    }
+
+    @JavascriptInterface
+    fun clearCacheAndCookies() {
+        runOnUi {
+            tabManager.clearAllCachesAndCookies()
+            onPushStateToUi()
+        }
+    }
+
+    @JavascriptInterface
     fun checkForUpdates(manual: Boolean) {
         runOnUi { appUpdater.checkForUpdates(manual) }
     }
@@ -243,7 +307,7 @@ class NativeBridge(
         }
 
         val recentArr = JSONArray()
-        telemetry.getRecentEvents().take(30).forEach { ev ->
+        telemetry.getRecentEvents().take(15).forEach { ev ->
             recentArr.put(
                 JSONObject().apply {
                     put("url", ev.url)
@@ -264,11 +328,25 @@ class NativeBridge(
             put("recentEvents", recentArr)
         }
 
+        val recsArr = JSONArray()
+        dataStore.getTopRecommendations(8).forEach { rec ->
+            recsArr.put(rec.toJson())
+        }
+
+        val downloadsSummaryObj = JSONObject().apply {
+            put("activeCount", downloadsRepo.getActiveCount())
+            put("totalCount", downloadsRepo.getTotalCount())
+        }
+
+        val currentSettings = dataStore.getSettings()
         return JSONObject().apply {
             put("platform", "android")
-            put("searchEngine", tabManager.getSearchEngine())
+            put("searchEngine", currentSettings.searchEngine)
+            put("settings", currentSettings.toJson())
             put("activeTabId", tabManager.getActiveTabId())
             put("tabs", tabsArr)
+            put("recommendations", recsArr)
+            put("downloadsSummary", downloadsSummaryObj)
             put("shields", shieldsObj)
             put("filterStats", statsObj)
             put("filterSources", sourcesArr)

@@ -2,18 +2,24 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { extractHost, isHostShieldsEnabled } from './adblock/filterEngine';
 import type {
   BookmarkItem,
+  BrowserSettings,
   BrowserState,
+  DownloadRecord,
   FilterSyncResult,
+  HistoryEntry,
   SearchEngineId,
 } from './adblock/types';
-import { getBrowserBridge } from './bridge/nativeBridge';
+import { DEFAULT_SETTINGS, getBrowserBridge } from './bridge/nativeBridge';
 import { registerWebOSBackHandler } from './bridge/webosAdapter';
 import { BookmarksDrawer } from './components/BookmarksDrawer';
+import { DownloadsDrawer } from './components/DownloadsDrawer';
+import { HistoryDrawer } from './components/HistoryDrawer';
 import { HomeStartPage } from './components/HomeStartPage';
+import { SettingsDrawer } from './components/SettingsDrawer';
 import { ShieldsPanel } from './components/ShieldsPanel';
 import { StreamPlayerView } from './components/StreamPlayerView';
 import { TabsDrawer } from './components/TabsDrawer';
-import { TopBar } from './components/TopBar';
+import { TopBar, type DrawerKind } from './components/TopBar';
 import { UpdateModal } from './components/UpdateModal';
 import { useDpadNavigation } from './hooks/useDpadNavigation';
 
@@ -92,17 +98,25 @@ export const App: React.FC = () => {
   const [localEngine, setLocalEngine] = useState<SearchEngineId>(
     () => bridge.getState().searchEngine ?? loadFallbackSearchEngine()
   );
-  const [activeDrawer, setActiveDrawer] = useState<
-    'tabs' | 'bookmarks' | 'shields' | null
-  >(null);
+  const [activeDrawer, setActiveDrawer] = useState<DrawerKind | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<FilterSyncResult | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [downloadRecords, setDownloadRecords] = useState<DownloadRecord[]>([]);
 
   const barRef = useRef<HTMLDivElement>(null);
   const omniboxInputRef = useRef<HTMLInputElement>(null);
 
-  const searchEngine: SearchEngineId = state.searchEngine ?? localEngine;
+  const settings: BrowserSettings = useMemo(
+    () => ({
+      ...DEFAULT_SETTINGS,
+      ...(state.settings ?? {}),
+      searchEngine: state.settings?.searchEngine ?? state.searchEngine ?? localEngine,
+    }),
+    [localEngine, state.searchEngine, state.settings]
+  );
+  const searchEngine: SearchEngineId = settings.searchEngine;
 
   useEffect(() => {
     const unsubState = bridge.subscribe((next) => {
@@ -190,14 +204,41 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleChangeEngine = (engine: SearchEngineId) => {
-    setLocalEngine(engine);
+  const addBookmarkItem = (title: string, url: string) => {
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return;
+    if (bookmarks.some((b) => b.url === cleanUrl)) return;
+    persistBookmarks([
+      {
+        id: `bm-${Date.now()}`,
+        title: title.trim() || cleanUrl,
+        url: cleanUrl,
+        tag: 'Saved',
+      },
+      ...bookmarks,
+    ]);
+  };
+
+  useEffect(() => {
+    if (activeDrawer === 'history') {
+      setHistoryEntries(bridge.getHistory());
+    } else if (activeDrawer === 'downloads') {
+      setDownloadRecords(bridge.getDownloads());
+    }
+  }, [activeDrawer, bridge, state.downloadsSummary?.activeCount, state.downloadsSummary?.totalCount, activeTab.url]);
+
+  const handleUpdateSettings = (next: BrowserSettings) => {
+    setLocalEngine(next.searchEngine);
     try {
-      localStorage.setItem(ENGINE_STORAGE_KEY, engine);
+      localStorage.setItem(ENGINE_STORAGE_KEY, next.searchEngine);
     } catch {
       // Ignore
     }
-    bridge.setSearchEngine(engine);
+    bridge.updateSettings(next);
+  };
+
+  const handleChangeEngine = (engine: SearchEngineId) => {
+    handleUpdateSettings({ ...settings, searchEngine: engine });
   };
 
   const currentHost = extractHost(activeTab.url);
@@ -209,15 +250,7 @@ export const App: React.FC = () => {
     if (isBookmarked) {
       persistBookmarks(bookmarks.filter((b) => b.url !== activeTab.url));
     } else {
-      persistBookmarks([
-        {
-          id: `bm-${Date.now()}`,
-          title: activeTab.title || currentHost || activeTab.url,
-          url: activeTab.url,
-          tag: 'Saved',
-        },
-        ...bookmarks,
-      ]);
+      addBookmarkItem(activeTab.title || currentHost || activeTab.url, activeTab.url);
     }
   };
 
@@ -230,6 +263,7 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         tabCount={state.tabs.length}
         totalBlocked={state.telemetry.totalBlocked}
+        downloadsActiveCount={state.downloadsSummary?.activeCount ?? 0}
         shieldsEnabledForSite={shieldsEnabledForSite}
         isBookmarked={isBookmarked}
         searchEngine={searchEngine}
@@ -251,7 +285,6 @@ export const App: React.FC = () => {
         onToggleDesktopMode={() =>
           bridge.setDesktopMode(activeTab.id, !activeTab.desktopMode)
         }
-        onCheckUpdates={() => bridge.checkForUpdates(true)}
         onOpenDrawer={(d) => setActiveDrawer((cur) => (cur === d ? null : d))}
       />
 
@@ -262,8 +295,15 @@ export const App: React.FC = () => {
           searchEngine={searchEngine}
           onChangeEngine={handleChangeEngine}
           onOpenUrl={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
+          onAddFavorite={addBookmarkItem}
+          onRemoveFavorite={(id) =>
+            persistBookmarks(bookmarks.filter((b) => b.id !== id))
+          }
           onOpenShields={() => setActiveDrawer('shields')}
           onOpenBookmarks={() => setActiveDrawer('bookmarks')}
+          onOpenHistory={() => setActiveDrawer('history')}
+          onOpenDownloads={() => setActiveDrawer('downloads')}
+          onOpenSettings={() => setActiveDrawer('settings')}
         />
       )}
 
@@ -332,16 +372,62 @@ export const App: React.FC = () => {
           bookmarks={bookmarks}
           currentUrl={activeTab.url}
           currentTitle={activeTab.title}
+          searchEngine={searchEngine}
           onOpenBookmark={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
-          onAddBookmark={(title, url) =>
-            persistBookmarks([
-              { id: `bm-${Date.now()}`, title, url, tag: 'Saved' },
-              ...bookmarks,
-            ])
-          }
+          onAddBookmark={addBookmarkItem}
           onRemoveBookmark={(id) =>
             persistBookmarks(bookmarks.filter((b) => b.id !== id))
           }
+          onClose={() => setActiveDrawer(null)}
+        />
+      )}
+
+      {activeDrawer === 'history' && (
+        <HistoryDrawer
+          entries={historyEntries}
+          saveHistoryEnabled={settings.saveHistory}
+          onNavigate={(url) => bridge.navigate(activeTab.id, url, searchEngine)}
+          onDeleteItem={(id) => {
+            bridge.deleteHistoryItem(id);
+            setHistoryEntries(bridge.getHistory());
+          }}
+          onClearAll={() => {
+            bridge.clearHistory();
+            setHistoryEntries([]);
+          }}
+          onClose={() => setActiveDrawer(null)}
+        />
+      )}
+
+      {activeDrawer === 'downloads' && (
+        <DownloadsDrawer
+          records={downloadRecords}
+          onOpenSystemDownloads={() => bridge.openSystemDownloads()}
+          onRemoveRecord={(id) => {
+            bridge.removeDownload(id);
+            setDownloadRecords(bridge.getDownloads());
+          }}
+          onClearCompleted={() => {
+            bridge.clearCompletedDownloads();
+            setDownloadRecords(bridge.getDownloads());
+          }}
+          onClose={() => setActiveDrawer(null)}
+        />
+      )}
+
+      {activeDrawer === 'settings' && (
+        <SettingsDrawer
+          settings={settings}
+          appVersion={state.appUpdate.installedVersion}
+          checkingUpdate={state.appUpdate.status === 'checking'}
+          onUpdateSettings={handleUpdateSettings}
+          onClearHistory={() => {
+            bridge.clearHistory();
+            setHistoryEntries([]);
+          }}
+          onClearCacheAndCookies={() => bridge.clearCacheAndCookies()}
+          onCheckForUpdates={() => bridge.checkForUpdates(true)}
+          onOpenShields={() => setActiveDrawer('shields')}
           onClose={() => setActiveDrawer(null)}
         />
       )}

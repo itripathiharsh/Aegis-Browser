@@ -102,11 +102,56 @@ export interface TelemetrySnapshot {
   recentEvents: BlockedEvent[];
 }
 
+export interface BrowserSettings {
+  searchEngine: SearchEngineId;
+  blockThirdPartyCookies: boolean;
+  defaultDesktopMode: boolean;
+  showRecommendations: boolean;
+  autoSyncFilters: boolean;
+  saveHistory: boolean;
+}
+
+export interface HistoryEntry {
+  id: string;
+  url: string;
+  title: string;
+  host: string;
+  visitedAtMs: number;
+}
+
+export interface RecommendedSite {
+  url: string;
+  title: string;
+  host: string;
+  visits: number;
+  lastVisitedMs: number;
+}
+
+export interface DownloadRecord {
+  id: string;
+  dmId: number;
+  fileName: string;
+  url: string;
+  mimeType: string;
+  totalBytes: number;
+  downloadedBytes: number;
+  status: 'downloading' | 'completed' | 'failed';
+  startedAtMs: number;
+}
+
+export interface DownloadsSummary {
+  activeCount: number;
+  totalCount: number;
+}
+
 export interface BrowserState {
   platform: 'android' | 'webos' | 'web';
   searchEngine?: SearchEngineId;
+  settings?: BrowserSettings;
   activeTabId: string;
   tabs: TabInfo[];
+  recommendations?: RecommendedSite[];
+  downloadsSummary?: DownloadsSummary;
   shields: ShieldsConfig;
   filterStats: FilterStats;
   filterSources: FilterSource[];

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import type { BookmarkItem } from '../adblock/types';
+import type { BookmarkItem, SearchEngineId } from '../adblock/types';
+import { resolveOmniboxInput } from '../utils/urlResolver';
 
 interface BookmarksDrawerProps {
   bookmarks: BookmarkItem[];
   currentUrl: string;
   currentTitle: string;
+  searchEngine?: SearchEngineId;
   onOpenBookmark: (url: string) => void;
   onAddBookmark: (title: string, url: string) => void;
   onRemoveBookmark: (id: string) => void;
@@ -15,6 +17,7 @@ export const BookmarksDrawer: React.FC<BookmarksDrawerProps> = ({
   bookmarks,
   currentUrl,
   currentTitle,
+  searchEngine = 'duckduckgo',
   onOpenBookmark,
   onAddBookmark,
   onRemoveBookmark,
@@ -30,7 +33,8 @@ export const BookmarksDrawer: React.FC<BookmarksDrawerProps> = ({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
-    onAddBookmark(title.trim() || url.trim(), url.trim());
+    const normalizedUrl = resolveOmniboxInput(url.trim(), searchEngine);
+    onAddBookmark(title.trim() || url.trim(), normalizedUrl);
     setTitle('');
     setUrl('');
   };
