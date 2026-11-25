@@ -17,7 +17,6 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -65,12 +64,6 @@ class MainActivity : AppCompatActivity() {
     private var uiReady: Boolean = false
     private var pushScheduled: Boolean = false
 
-    private val installPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        appUpdater.onInstallPermissionReturned()
-    }
-
     private val pushRunnable = Runnable {
         pushScheduled = false
         pushStateToUiImmediate()
@@ -81,7 +74,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, true)
+        @Suppress("DEPRECATION")
         window.statusBarColor = Color.parseColor("#090C10")
+        @Suppress("DEPRECATION")
         window.navigationBarColor = Color.parseColor("#090C10")
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -111,9 +106,6 @@ class MainActivity : AppCompatActivity() {
                         scheduleStatePush()
                     }
                 }
-            },
-            onRequestInstallPermission = { permIntent ->
-                installPermissionLauncher.launch(permIntent)
             }
         )
 
@@ -220,16 +212,19 @@ class MainActivity : AppCompatActivity() {
             onPushStateToUi = { scheduleStatePush() },
             onFilterSyncCompleted = { syncJson ->
                 if (uiReady) {
+                    val safeSync = syncJson.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
                     chromeUiWebView.evaluateJavascript(
-                        "window.__AEGIS_ON_SYNC__ && window.__AEGIS_ON_SYNC__($syncJson);",
+                        "window.__AEGIS_ON_SYNC__ && window.__AEGIS_ON_SYNC__($safeSync);",
                         null
                     )
                 }
             }
         )
 
+        tabManager.ensureInitialTab()
         configureChromeUiWebView()
         handleIncomingIntent(intent)
+        updateViewportSplit()
 
         // Run silent background release check shortly after launch
         scope.launch {
@@ -263,6 +258,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
+
+    internal fun getNativeBridgeForTesting(): NativeBridge = nativeBridge
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureChromeUiWebView() {
@@ -329,6 +326,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateViewportSplit() {
+        if (!::tabManager.isInitialized ||
+            !::chromeUiWebView.isInitialized ||
+            !::contentContainer.isInitialized ||
+            !::appUpdater.isInitialized
+        ) {
+            return
+        }
+
         val activeIsInternal = tabManager.getActiveTab()?.isInternalPage ?: true
         val expandChrome = overlayExpanded || activeIsInternal || appUpdater.getState().popupVisible
 
@@ -393,8 +398,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pushStateToUiImmediate() {
-        if (!uiReady) return
+        if (!uiReady || !::nativeBridge.isInitialized || !::chromeUiWebView.isInitialized) return
         val json = nativeBridge.buildStateJson().toString()
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
         chromeUiWebView.evaluateJavascript(
             "window.__AEGIS_ON_STATE__ && window.__AEGIS_ON_STATE__($json);",
             null
@@ -438,21 +445,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        tabManager.pauseAll()
-        chromeUiWebView.onPause()
+        if (::tabManager.isInitialized) tabManager.pauseAll()
+        if (::chromeUiWebView.isInitialized) chromeUiWebView.onPause()
     }
 
     override fun onResume() {
         super.onResume()
-        chromeUiWebView.onResume()
-        tabManager.resumeActive()
+        if (::chromeUiWebView.isInitialized) chromeUiWebView.onResume()
+        if (::tabManager.isInitialized) tabManager.resumeActive()
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(pushRunnable)
         scope.cancel()
-        tabManager.destroyAll()
-        chromeUiWebView.destroy()
+        if (::tabManager.isInitialized) tabManager.destroyAll()
+        if (::chromeUiWebView.isInitialized) chromeUiWebView.destroy()
         super.onDestroy()
     }
 }

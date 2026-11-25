@@ -25,6 +25,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   }, []);
 
   const isDownloading = update.status === 'downloading';
+  const isReady = update.status === 'ready_to_install';
   const isAwaitingPerm = update.status === 'awaiting_permission';
 
   return (
@@ -103,10 +104,16 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         )}
 
         {update.message &&
-          (update.status === 'error' || isAwaitingPerm) && (
+          (update.status === 'error' || isAwaitingPerm || isReady) && (
             <div
               className="status-banner"
-              data-tone={update.status === 'error' ? 'blocked' : undefined}
+              data-tone={
+                update.status === 'error'
+                  ? 'blocked'
+                  : isReady
+                    ? 'allowed'
+                    : undefined
+              }
               role="alert"
             >
               {update.message}
@@ -128,6 +135,20 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 Hide
               </button>
             </>
+          ) : isReady ? (
+            <>
+              <button
+                ref={primaryBtnRef}
+                type="button"
+                className="primary-btn"
+                onClick={onRetryInstall}
+              >
+                Open Downloads
+              </button>
+              <button type="button" className="secondary-btn" onClick={onLater}>
+                Close
+              </button>
+            </>
           ) : isAwaitingPerm ? (
             <>
               <button
@@ -136,7 +157,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 className="primary-btn"
                 onClick={onRetryInstall}
               >
-                Retry Install
+                Open Downloads
               </button>
               <button type="button" className="secondary-btn" onClick={onLater}>
                 Later

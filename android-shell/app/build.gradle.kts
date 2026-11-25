@@ -14,13 +14,13 @@ val aegisGithubRepo = providers.gradleProperty("aegisGithubRepo")
 
 val aegisVersionName = providers.gradleProperty("aegisVersionName")
     .orElse(providers.environmentVariable("AEGIS_VERSION_NAME"))
-    .orElse("1.0.1")
+    .orElse("1.0.2")
     .get()
 
 val aegisVersionCode = providers.gradleProperty("aegisVersionCode")
     .orElse(providers.environmentVariable("AEGIS_VERSION_CODE"))
-    .map { it.toIntOrNull() ?: 1000001 }
-    .orElse(1000001)
+    .map { it.toIntOrNull() ?: 1000002 }
+    .orElse(1000002)
     .get()
 
 android {
@@ -95,6 +95,15 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            val envDir = System.getenv("ROBOLECTRIC_DEPS_DIR")?.takeIf { it.isNotBlank() }
+            val localFDir = file("F:/gradle-home/robolectric-deps").takeIf { it.exists() }?.absolutePath
+            val depsDir = envDir ?: localFDir
+            if (depsDir != null) {
+                test.systemProperty("robolectric.dependency.dir", depsDir)
+            }
+        }
     }
 }
 
@@ -106,4 +115,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core-ktx:1.6.1")
 }

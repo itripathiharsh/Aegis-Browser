@@ -1,9 +1,8 @@
-# Preserve code structure rather than aggressive name scrambling so Play Protect / static scanners don't treat shrunk DEX as obfuscated malware.
+# Preserve app structure & names cleanly instead of malware-like name scrambling
 -dontobfuscate
 -keepattributes SourceFile,LineNumberTable
 
+-keep class com.aegis.browser.** { *; }
 -keepclassmembers class com.aegis.browser.bridge.NativeBridge {
     @android.webkit.JavascriptInterface <methods>;
 }
--keep class com.aegis.browser.adblock.** { *; }
--keep class com.aegis.browser.updater.** { *; }

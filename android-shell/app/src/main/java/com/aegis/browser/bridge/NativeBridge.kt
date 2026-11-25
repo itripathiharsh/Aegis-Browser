@@ -176,7 +176,7 @@ class NativeBridge(
 
     @JavascriptInterface
     fun retryPendingInstall() {
-        runOnUi { appUpdater.retryPendingInstall() }
+        runOnUi { appUpdater.openDownloadedUpdate() }
     }
 
     fun buildStateJson(): JSONObject {

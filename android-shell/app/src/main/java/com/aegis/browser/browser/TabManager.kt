@@ -18,13 +18,13 @@ import java.util.UUID
 
 data class TabSession(
     val id: String,
-    var title: String,
-    var url: String,
-    var isLoading: Boolean = false,
-    var progress: Int = 0,
-    var canGoBack: Boolean = false,
-    var canGoForward: Boolean = false,
-    var desktopMode: Boolean = false,
+    @Volatile var title: String,
+    @Volatile var url: String,
+    @Volatile var isLoading: Boolean = false,
+    @Volatile var progress: Int = 0,
+    @Volatile var canGoBack: Boolean = false,
+    @Volatile var canGoForward: Boolean = false,
+    @Volatile var desktopMode: Boolean = false,
     var webView: WebView? = null,
     var webViewClient: BrowserWebViewClient? = null
 ) {
@@ -41,39 +41,57 @@ class TabManager(
     private val onShowFullscreen: (View, WebChromeClient.CustomViewCallback) -> Unit,
     private val onHideFullscreen: () -> Unit
 ) {
+    private val tabsLock = Any()
     private val tabs = mutableListOf<TabSession>()
+
+    @Volatile
     private var activeTabId: String = ""
 
-    init {
-        createTab("aegis://home", makeActive = true)
+    /**
+     * Separated from constructor init so MainActivity's `tabManager` reference and NativeBridge
+     * are fully assigned before `onTabsUpdated` callbacks fire.
+     */
+    fun ensureInitialTab() {
+        val isEmpty = synchronized(tabsLock) { tabs.isEmpty() }
+        if (isEmpty) {
+            createTab("aegis://home", makeActive = true)
+        }
     }
 
-    fun getTabs(): List<TabSession> = tabs.toList()
+    fun getTabs(): List<TabSession> = synchronized(tabsLock) { tabs.toList() }
 
-    fun getActiveTab(): TabSession? = tabs.find { it.id == activeTabId }
+    fun getActiveTab(): TabSession? = synchronized(tabsLock) {
+        tabs.find { it.id == activeTabId } ?: tabs.firstOrNull()
+    }
 
     fun getActiveTabId(): String = activeTabId
 
     fun createTab(initialInput: String? = null, makeActive: Boolean = true): TabSession {
         val id = "tab-" + UUID.randomUUID().toString().take(8)
         val resolved = if (initialInput.isNullOrBlank()) "aegis://home" else resolveUserInput(initialInput)
-        val title = if (resolved == "aegis://home") "New Tab" else resolved
+        val title = if (resolved == "aegis://home") "Aegis Start" else resolved
         val session = TabSession(id = id, title = title, url = resolved)
-        tabs.add(session)
+        synchronized(tabsLock) {
+            tabs.add(session)
+        }
         if (makeActive) {
             switchTab(id)
+        } else {
+            onTabsUpdated()
         }
         if (!session.isInternalPage) {
             loadUrlInTab(session, resolved)
         }
-        onTabsUpdated()
         return session
     }
 
     fun switchTab(tabId: String) {
-        val target = tabs.find { it.id == tabId } ?: return
-        activeTabId = target.id
-        tabs.forEach { tab ->
+        val snapshot = synchronized(tabsLock) {
+            val target = tabs.find { it.id == tabId } ?: return
+            activeTabId = target.id
+            tabs.toList()
+        }
+        snapshot.forEach { tab ->
             val wv = tab.webView ?: return@forEach
             if (tab.id == activeTabId && !tab.isInternalPage) {
                 wv.visibility = View.VISIBLE
@@ -87,9 +105,21 @@ class TabManager(
     }
 
     fun closeTab(tabId: String) {
-        val idx = tabs.indexOfFirst { it.id == tabId }
-        if (idx < 0) return
-        val removed = tabs.removeAt(idx)
+        val removed: TabSession
+        val nextActiveId: String?
+        synchronized(tabsLock) {
+            val idx = tabs.indexOfFirst { it.id == tabId }
+            if (idx < 0) return
+            removed = tabs.removeAt(idx)
+            nextActiveId = if (tabs.isEmpty()) {
+                null
+            } else if (activeTabId == tabId) {
+                tabs[idx.coerceAtMost(tabs.lastIndex)].id
+            } else {
+                activeTabId
+            }
+        }
+
         removed.webView?.let { wv ->
             container.removeView(wv)
             wv.stopLoading()
@@ -97,21 +127,20 @@ class TabManager(
         }
         telemetry.removeTab(tabId)
 
-        if (tabs.isEmpty()) {
+        if (nextActiveId == null) {
             createTab("aegis://home", makeActive = true)
             return
         }
 
-        if (activeTabId == tabId) {
-            val nextIdx = idx.coerceAtMost(tabs.lastIndex)
-            switchTab(tabs[nextIdx].id)
+        if (nextActiveId != activeTabId) {
+            switchTab(nextActiveId)
         } else {
             onTabsUpdated()
         }
     }
 
     fun navigate(tabId: String, rawInput: String) {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         val resolved = resolveUserInput(rawInput)
         tab.url = resolved
         if (resolved.startsWith("aegis://")) {
@@ -127,14 +156,13 @@ class TabManager(
     }
 
     fun goBack(tabId: String): Boolean {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return false
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return false
         val wv = tab.webView
         if (!tab.isInternalPage && wv != null && wv.canGoBack()) {
             wv.goBack()
             return true
         }
         if (!tab.isInternalPage) {
-            // Return cleanly to Start Page when history reaches root
             navigate(tab.id, "aegis://home")
             return true
         }
@@ -142,26 +170,26 @@ class TabManager(
     }
 
     fun goForward(tabId: String) {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         tab.webView?.takeIf { it.canGoForward() }?.goForward()
     }
 
     fun reload(tabId: String) {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         if (!tab.isInternalPage) {
             tab.webView?.reload()
         }
     }
 
     fun stopLoading(tabId: String) {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         tab.webView?.stopLoading()
         tab.isLoading = false
         onTabsUpdated()
     }
 
     fun setDesktopMode(tabId: String, desktop: Boolean) {
-        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val tab = synchronized(tabsLock) { tabs.find { it.id == tabId } } ?: getActiveTab() ?: return
         tab.desktopMode = desktop
         tab.webView?.let { wv ->
             applyUserAgent(wv.settings, desktop)
@@ -178,7 +206,7 @@ class TabManager(
     }
 
     fun pauseAll() {
-        tabs.forEach { it.webView?.onPause() }
+        getTabs().forEach { it.webView?.onPause() }
     }
 
     fun resumeActive() {
@@ -186,13 +214,17 @@ class TabManager(
     }
 
     fun destroyAll() {
-        tabs.forEach { tab ->
+        val snapshot = synchronized(tabsLock) {
+            val copy = tabs.toList()
+            tabs.clear()
+            copy
+        }
+        snapshot.forEach { tab ->
             tab.webView?.let { wv ->
                 container.removeView(wv)
                 wv.destroy()
             }
         }
-        tabs.clear()
     }
 
     private fun loadUrlInTab(tab: TabSession, url: String) {
@@ -253,7 +285,7 @@ class TabManager(
             adBlockEngine = adBlockEngine,
             telemetry = telemetry
         ) { id, updatedUrl, loading, canBack, canForward ->
-            val target = tabs.find { it.id == id } ?: return@BrowserWebViewClient
+            val target = synchronized(tabsLock) { tabs.find { it.id == id } } ?: return@BrowserWebViewClient
             if (updatedUrl.isNotBlank()) target.url = updatedUrl
             target.isLoading = loading
             target.canGoBack = canBack
@@ -268,14 +300,16 @@ class TabManager(
             adBlockEngine = adBlockEngine,
             telemetry = telemetry,
             onProgressChangedCb = { id, progress ->
-                tabs.find { it.id == id }?.let { t ->
+                val target = synchronized(tabsLock) { tabs.find { it.id == id } }
+                target?.let { t ->
                     t.progress = progress
                     if (progress >= 100) t.isLoading = false
                     onTabsUpdated()
                 }
             },
             onTitleChangedCb = { id, title ->
-                tabs.find { it.id == id }?.let { t ->
+                val target = synchronized(tabsLock) { tabs.find { it.id == id } }
+                target?.let { t ->
                     t.title = title
                     onTabsUpdated()
                 }
@@ -291,7 +325,8 @@ class TabManager(
     }
 
     private fun applyUserAgent(settings: WebSettings, desktop: Boolean) {
-        val defaultUa = WebSettings.getDefaultUserAgent(context)
+        val defaultUa = runCatching { WebSettings.getDefaultUserAgent(context) }.getOrNull()
+            ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
         if (desktop) {
             settings.userAgentString =
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"

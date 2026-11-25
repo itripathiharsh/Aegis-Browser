@@ -30,31 +30,33 @@ class FilterListUpdater(
             context.assets.open("filters/sources.json").bufferedReader().use { it.readText() }
         }.getOrNull() ?: return emptyList()
 
-        val root = JSONObject(raw)
-        val arr = root.optJSONArray("sources") ?: JSONArray()
-        val result = mutableListOf<FilterSourceConfig>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.getJSONObject(i)
-            val id = obj.getString("id")
-            val catStr = obj.optString("category", "ads")
-            val cat = when (catStr) {
-                "trackers" -> BlockCategory.TRACKER
-                "popups" -> BlockCategory.POPUP
-                else -> BlockCategory.AD
-            }
-            result.add(
-                FilterSourceConfig(
-                    id = id,
-                    name = obj.getString("name"),
-                    category = cat,
-                    url = obj.getString("url"),
-                    enabled = prefs.getBoolean("src_enabled_$id", obj.optBoolean("enabled", true)),
-                    lastSyncedIso = prefs.getString("src_synced_$id", null),
-                    cachedRuleCount = prefs.getInt("src_count_$id", 0)
+        return runCatching {
+            val root = JSONObject(raw)
+            val arr = root.optJSONArray("sources") ?: JSONArray()
+            val result = mutableListOf<FilterSourceConfig>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val id = obj.getString("id")
+                val catStr = obj.optString("category", "ads")
+                val cat = when (catStr) {
+                    "trackers" -> BlockCategory.TRACKER
+                    "popups" -> BlockCategory.POPUP
+                    else -> BlockCategory.AD
+                }
+                result.add(
+                    FilterSourceConfig(
+                        id = id,
+                        name = obj.getString("name"),
+                        category = cat,
+                        url = obj.getString("url"),
+                        enabled = prefs.getBoolean("src_enabled_$id", obj.optBoolean("enabled", true)),
+                        lastSyncedIso = prefs.getString("src_synced_$id", null),
+                        cachedRuleCount = prefs.getInt("src_count_$id", 0)
+                    )
                 )
-            )
-        }
-        return result
+            }
+            result
+        }.getOrDefault(emptyList())
     }
 
     suspend fun syncEnabledLists(): FilterSyncResult = withContext(Dispatchers.IO) {
