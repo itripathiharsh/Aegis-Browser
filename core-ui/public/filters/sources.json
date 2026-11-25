@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "easylist-adservers",
+      "name": "EasyList Ad Servers (GitHub Mirror)",
+      "category": "ads",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_adservers.txt",
+      "enabled": true
+    },
+    {
+      "id": "easyprivacy-trackers",
+      "name": "EasyPrivacy Tracking Servers (GitHub Mirror)",
+      "category": "trackers",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/master/easyprivacy/easyprivacy_trackingservers.txt",
+      "enabled": true
+    },
+    {
+      "id": "ublock-filters",
+      "name": "uBlock Origin Core Filters (GitHub Mirror)",
+      "category": "ads",
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt",
+      "enabled": true
+    },
+    {
+      "id": "ublock-badware",
+      "name": "uBlock Origin Badware & Popups (GitHub Mirror)",
+      "category": "popups",
+      "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt",
+      "enabled": true
+    },
+    {
+      "id": "peter-lowe-hosts",
+      "name": "Peter Lowe Ad & Tracking List",
+      "category": "ads",
+      "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext",
+      "enabled": true
+    },
+    {
+      "id": "stevenblack-hosts",
+      "name": "StevenBlack Unified Hosts (GitHub Mirror)",
+      "category": "ads",
+      "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+      "enabled": false
+    }
+  ]
+}

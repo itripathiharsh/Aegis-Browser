@@ -1,0 +1,49 @@
+! Title: Aegis Cosmetic Ad Hiding Rules
+! License: GPLv3
+! Last updated: 2026-11-25
+
+! === Global Cosmetic Selectors ===
+##ins.adsbygoogle
+##.adsbygoogle
+##[id^="div-gpt-ad"]
+##[id^="google_ads_iframe"]
+##[data-ad-slot]
+##[data-ad-unit]
+##[data-google-query-id]
+##iframe[src*="doubleclick.net"]
+##iframe[src*="googlesyndication.com"]
+##iframe[src*="taboola.com"]
+##iframe[src*="outbrain.com"]
+##iframe[src*="mgid.com"]
+##iframe[id*="ads_"]
+##.ad-banner
+##.ad-container
+##.ad-wrapper
+##.ad-slot
+##.ad-leaderboard
+##.ad-sidebar
+##.advert-box
+##.advertisement
+##.sponsored-content
+##.sponsored-links
+##.taboola-widget
+##.trc_rbox_container
+##.OUTBRAIN
+##.ob-widget
+##[class*="mgbox"]
+##.popunder-overlay
+##.sticky-bottom-ad
+
+! === Video Player & Streaming Cosmetic Rules ===
+youtube.com###player-ads
+youtube.com###masthead-ad
+youtube.com##ytd-ad-slot-renderer
+youtube.com##ytd-promoted-sparkles-web-renderer
+youtube.com##ytd-display-ad-renderer
+youtube.com##ytd-banner-promo-renderer
+youtube.com##.ytp-ad-overlay-container
+youtube.com##.ytp-ad-text-overlay
+youtube.com##.ytp-ad-message-container
+youtube.com##ytm-promoted-sparkles-web-renderer
+m.youtube.com##ytm-promoted-sparkles-web-renderer
+m.youtube.com###player-ads

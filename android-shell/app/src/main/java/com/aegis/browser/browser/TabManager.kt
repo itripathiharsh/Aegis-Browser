@@ -1,0 +1,339 @@
+package com.aegis.browser.browser
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Color
+import android.net.Uri
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.widget.FrameLayout
+import com.aegis.browser.adblock.AdBlockEngine
+import com.aegis.browser.adblock.ShieldsTelemetry
+import java.net.URLEncoder
+import java.util.UUID
+
+data class TabSession(
+    val id: String,
+    var title: String,
+    var url: String,
+    var isLoading: Boolean = false,
+    var progress: Int = 0,
+    var canGoBack: Boolean = false,
+    var canGoForward: Boolean = false,
+    var desktopMode: Boolean = false,
+    var webView: WebView? = null,
+    var webViewClient: BrowserWebViewClient? = null
+) {
+    val isInternalPage: Boolean
+        get() = url.startsWith("aegis://")
+}
+
+class TabManager(
+    private val context: Context,
+    private val container: FrameLayout,
+    private val adBlockEngine: AdBlockEngine,
+    private val telemetry: ShieldsTelemetry,
+    private val onTabsUpdated: () -> Unit,
+    private val onShowFullscreen: (View, WebChromeClient.CustomViewCallback) -> Unit,
+    private val onHideFullscreen: () -> Unit
+) {
+    private val tabs = mutableListOf<TabSession>()
+    private var activeTabId: String = ""
+
+    init {
+        createTab("aegis://home", makeActive = true)
+    }
+
+    fun getTabs(): List<TabSession> = tabs.toList()
+
+    fun getActiveTab(): TabSession? = tabs.find { it.id == activeTabId }
+
+    fun getActiveTabId(): String = activeTabId
+
+    fun createTab(initialInput: String? = null, makeActive: Boolean = true): TabSession {
+        val id = "tab-" + UUID.randomUUID().toString().take(8)
+        val resolved = if (initialInput.isNullOrBlank()) "aegis://home" else resolveUserInput(initialInput)
+        val title = if (resolved == "aegis://home") "New Tab" else resolved
+        val session = TabSession(id = id, title = title, url = resolved)
+        tabs.add(session)
+        if (makeActive) {
+            switchTab(id)
+        }
+        if (!session.isInternalPage) {
+            loadUrlInTab(session, resolved)
+        }
+        onTabsUpdated()
+        return session
+    }
+
+    fun switchTab(tabId: String) {
+        val target = tabs.find { it.id == tabId } ?: return
+        activeTabId = target.id
+        tabs.forEach { tab ->
+            val wv = tab.webView ?: return@forEach
+            if (tab.id == activeTabId && !tab.isInternalPage) {
+                wv.visibility = View.VISIBLE
+                wv.onResume()
+            } else {
+                wv.visibility = View.GONE
+                wv.onPause()
+            }
+        }
+        onTabsUpdated()
+    }
+
+    fun closeTab(tabId: String) {
+        val idx = tabs.indexOfFirst { it.id == tabId }
+        if (idx < 0) return
+        val removed = tabs.removeAt(idx)
+        removed.webView?.let { wv ->
+            container.removeView(wv)
+            wv.stopLoading()
+            wv.destroy()
+        }
+        telemetry.removeTab(tabId)
+
+        if (tabs.isEmpty()) {
+            createTab("aegis://home", makeActive = true)
+            return
+        }
+
+        if (activeTabId == tabId) {
+            val nextIdx = idx.coerceAtMost(tabs.lastIndex)
+            switchTab(tabs[nextIdx].id)
+        } else {
+            onTabsUpdated()
+        }
+    }
+
+    fun navigate(tabId: String, rawInput: String) {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        val resolved = resolveUserInput(rawInput)
+        tab.url = resolved
+        if (resolved.startsWith("aegis://")) {
+            tab.isLoading = false
+            tab.progress = 100
+            tab.title = if (resolved.startsWith("aegis://player")) "Aegis Video Player" else "Aegis Start"
+            tab.webView?.visibility = View.GONE
+            tab.webView?.onPause()
+            onTabsUpdated()
+            return
+        }
+        loadUrlInTab(tab, resolved)
+    }
+
+    fun goBack(tabId: String): Boolean {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return false
+        val wv = tab.webView
+        if (!tab.isInternalPage && wv != null && wv.canGoBack()) {
+            wv.goBack()
+            return true
+        }
+        if (!tab.isInternalPage) {
+            // Return cleanly to Start Page when history reaches root
+            navigate(tab.id, "aegis://home")
+            return true
+        }
+        return false
+    }
+
+    fun goForward(tabId: String) {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        tab.webView?.takeIf { it.canGoForward() }?.goForward()
+    }
+
+    fun reload(tabId: String) {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        if (!tab.isInternalPage) {
+            tab.webView?.reload()
+        }
+    }
+
+    fun stopLoading(tabId: String) {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        tab.webView?.stopLoading()
+        tab.isLoading = false
+        onTabsUpdated()
+    }
+
+    fun setDesktopMode(tabId: String, desktop: Boolean) {
+        val tab = tabs.find { it.id == tabId } ?: getActiveTab() ?: return
+        tab.desktopMode = desktop
+        tab.webView?.let { wv ->
+            applyUserAgent(wv.settings, desktop)
+            wv.reload()
+        }
+        onTabsUpdated()
+    }
+
+    fun focusActiveWebView() {
+        val tab = getActiveTab() ?: return
+        if (!tab.isInternalPage) {
+            tab.webView?.requestFocus()
+        }
+    }
+
+    fun pauseAll() {
+        tabs.forEach { it.webView?.onPause() }
+    }
+
+    fun resumeActive() {
+        getActiveTab()?.takeIf { !it.isInternalPage }?.webView?.onResume()
+    }
+
+    fun destroyAll() {
+        tabs.forEach { tab ->
+            tab.webView?.let { wv ->
+                container.removeView(wv)
+                wv.destroy()
+            }
+        }
+        tabs.clear()
+    }
+
+    private fun loadUrlInTab(tab: TabSession, url: String) {
+        val wv = tab.webView ?: createContentWebView(tab).also { created ->
+            tab.webView = created
+            container.addView(
+                created,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+
+        if (tab.id == activeTabId) {
+            wv.visibility = View.VISIBLE
+            wv.onResume()
+        } else {
+            wv.visibility = View.GONE
+        }
+
+        tab.isLoading = true
+        tab.progress = 10
+        tab.webViewClient?.updateTrackedUrl(url)
+        wv.loadUrl(url)
+        onTabsUpdated()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createContentWebView(tab: TabSession): WebView {
+        val wv = WebView(context)
+        wv.setBackgroundColor(Color.parseColor("#090C10"))
+        wv.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        wv.isFocusable = true
+        wv.isFocusableInTouchMode = true
+
+        val settings = wv.settings
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.databaseEnabled = true
+        settings.mediaPlaybackRequiresUserGesture = false
+        settings.setSupportMultipleWindows(true)
+        settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = true
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        // Strict isolation: untrusted content WebViews never access local files or content URIs
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        applyUserAgent(settings, tab.desktopMode)
+
+        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
+
+        val client = BrowserWebViewClient(
+            tabId = tab.id,
+            adBlockEngine = adBlockEngine,
+            telemetry = telemetry
+        ) { id, updatedUrl, loading, canBack, canForward ->
+            val target = tabs.find { it.id == id } ?: return@BrowserWebViewClient
+            if (updatedUrl.isNotBlank()) target.url = updatedUrl
+            target.isLoading = loading
+            target.canGoBack = canBack
+            target.canGoForward = canForward
+            onTabsUpdated()
+        }
+        tab.webViewClient = client
+        wv.webViewClient = client
+
+        wv.webChromeClient = BrowserWebChromeClient(
+            tabId = tab.id,
+            adBlockEngine = adBlockEngine,
+            telemetry = telemetry,
+            onProgressChangedCb = { id, progress ->
+                tabs.find { it.id == id }?.let { t ->
+                    t.progress = progress
+                    if (progress >= 100) t.isLoading = false
+                    onTabsUpdated()
+                }
+            },
+            onTitleChangedCb = { id, title ->
+                tabs.find { it.id == id }?.let { t ->
+                    t.title = title
+                    onTabsUpdated()
+                }
+            },
+            onOpenNewTabCb = { newUrl ->
+                createTab(newUrl, makeActive = true)
+            },
+            onShowFullscreenCb = onShowFullscreen,
+            onHideFullscreenCb = onHideFullscreen
+        )
+
+        return wv
+    }
+
+    private fun applyUserAgent(settings: WebSettings, desktop: Boolean) {
+        val defaultUa = WebSettings.getDefaultUserAgent(context)
+        if (desktop) {
+            settings.userAgentString =
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        } else {
+            settings.userAgentString = defaultUa.replace("; wv", "")
+        }
+    }
+
+    companion object {
+        fun resolveUserInput(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return "aegis://home"
+            if (trimmed.startsWith("aegis://")) return trimmed
+
+            val lower = trimmed.lowercase()
+            if (lower.startsWith("http://") || lower.startsWith("https://")) {
+                return if (isDirectStreamUrl(lower)) {
+                    "aegis://player?src=" + Uri.encode(trimmed)
+                } else {
+                    trimmed
+                }
+            }
+
+            // Domain / IP heuristic
+            val looksLikeHost = !trimmed.contains(' ') &&
+                (trimmed.contains('.') || trimmed.startsWith("localhost"))
+            if (looksLikeHost) {
+                val url = "https://$trimmed"
+                return if (isDirectStreamUrl(url.lowercase())) {
+                    "aegis://player?src=" + Uri.encode(url)
+                } else {
+                    url
+                }
+            }
+
+            val encoded = URLEncoder.encode(trimmed, "UTF-8")
+            return "https://duckduckgo.com/?q=$encoded"
+        }
+
+        private fun isDirectStreamUrl(lowerUrl: String): Boolean {
+            val clean = lowerUrl.substringBefore('?').substringBefore('#')
+            return clean.endsWith(".m3u8") || clean.endsWith(".mp4")
+        }
+    }
+}

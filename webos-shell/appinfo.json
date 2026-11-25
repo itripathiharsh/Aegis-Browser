@@ -1,0 +1,18 @@
+{
+  "id": "com.aegis.browser",
+  "version": "1.0.0",
+  "vendor": "Aegis Open Source",
+  "type": "web",
+  "main": "index.html",
+  "title": "Aegis Browser",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#090C10",
+  "resolution": "1920x1080",
+  "supportsAudioGuidance": true,
+  "disableBackHistoryAPI": true,
+  "requiredPermissions": [
+    "time.query",
+    "network.operation"
+  ]
+}

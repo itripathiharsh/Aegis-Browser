@@ -1,0 +1,158 @@
+:root {
+  /* Primitive Palette — Obsidian Shield Console */
+  --slate-950: #090c10;
+  --slate-900: #11161d;
+  --slate-850: #18202b;
+  --slate-800: #212c3a;
+  --slate-700: #303f52;
+  --slate-400: #93a3b8;
+  --slate-100: #edf2f7;
+
+  --flame-500: #ff6b2b;
+  --flame-400: #ff824d;
+  --flame-300: #ffb067;
+
+  --emerald-400: #22c55e;
+  --sky-400: #38bdf8;
+  --amber-400: #f59e0b;
+  --crimson-400: #ef4444;
+
+  /* Semantic Color Tokens */
+  color-scheme: dark;
+  --color-bg: var(--slate-950);
+  --color-surface: var(--slate-900);
+  --color-surface-2: var(--slate-850);
+  --color-surface-3: var(--slate-800);
+  --color-border: rgba(237, 242, 247, 0.12);
+  --color-border-strong: rgba(237, 242, 247, 0.22);
+
+  --color-text: var(--slate-100);
+  --color-text-muted: var(--slate-400);
+
+  --color-action: var(--flame-500);
+  --color-action-hover: var(--flame-400);
+  --color-action-text: #090c10;
+  --color-focus: var(--flame-300);
+
+  --color-success: var(--emerald-400);
+  --color-info: var(--sky-400);
+  --color-warn: var(--amber-400);
+  --color-danger: var(--crimson-400);
+
+  /* Typography */
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs: clamp(0.75rem, 0.72rem + 0.12vw, 0.8125rem);
+  --text-sm: clamp(0.84rem, 0.81rem + 0.15vw, 0.92rem);
+  --text-base: clamp(0.95rem, 0.92rem + 0.2vw, 1.0625rem);
+  --text-lg: clamp(1.12rem, 1.04rem + 0.38vw, 1.35rem);
+  --text-xl: clamp(1.38rem, 1.2rem + 0.9vw, 2.05rem);
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-body: 1.55;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Shape Hierarchy */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Elevation */
+  --shadow-1: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  /* Motion */
+  --dur-fast: 110ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Touch & 10-foot TV Targets */
+  --target-min: 44px;
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+}
+
+@media (min-width: 64em) {
+  :root {
+    --target-min: 48px;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--color-bg);
+}
+
+body {
+  min-height: 100dvh;
+  font: var(--text-base) / var(--leading-body) var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible,
+[data-dpad-focused="true"] {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(255, 176, 103, 0.22);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

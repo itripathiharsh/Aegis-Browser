@@ -1,0 +1,31 @@
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+
+# Node / Core UI
+core-ui/node_modules/
+core-ui/dist/
+
+# Android / Gradle
+android-shell/.gradle/
+android-shell/build/
+android-shell/app/build/
+android-shell/local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.keystore
+*.jks
+!android-shell/app/aegis-signing.jks
+
+# Synced build assets (regenerated via scripts/sync-assets.mjs)
+android-shell/app/src/main/assets/ui/
+
+# Temp / Logs
+*.log
+temp/
+tmp/
