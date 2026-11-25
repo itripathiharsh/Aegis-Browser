@@ -218,7 +218,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           <div className="toggle-row">
             <div>
               <div className="row-title">Restore Open Tabs on Start</div>
-              <div className="row-meta">Keep normal tabs after closing Aegis</div>
+              <div className="row-meta">Keep normal tabs after closing Nivrok</div>
             </div>
             <button
               type="button"
@@ -355,7 +355,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         <div className="panel-card">
           <div className="toggle-row">
             <div>
-              <div className="row-title">Aegis Browser v{appVersion}</div>
+              <div className="row-title">Nivrok v{appVersion}</div>
               <div className="row-meta">Signed Android build • GitHub Releases updates</div>
             </div>
             <button

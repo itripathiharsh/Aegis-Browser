@@ -21,12 +21,12 @@ describe('semver updater utilities', () => {
         size: 3_500_000,
       },
       {
-        name: 'AegisBrowser-v1.0.2.apk',
+        name: 'Nivrok-v1.0.8.apk',
         browser_download_url: 'https://example.com/release.apk',
         size: 820_000,
       },
     ]);
-    expect(picked?.name).toBe('AegisBrowser-v1.0.2.apk');
+    expect(picked?.name).toBe('Nivrok-v1.0.8.apk');
     expect(formatBytes(1_048_576)).toBe('1.00 MB');
   });
 });

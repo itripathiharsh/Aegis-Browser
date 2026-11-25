@@ -2,7 +2,7 @@
 -dontobfuscate
 -keepattributes SourceFile,LineNumberTable
 
--keep class com.aegis.browser.** { *; }
--keepclassmembers class com.aegis.browser.bridge.NativeBridge {
+-keep class com.nivrok.browser.** { *; }
+-keepclassmembers class com.nivrok.browser.bridge.NativeBridge {
     @android.webkit.JavascriptInterface <methods>;
 }

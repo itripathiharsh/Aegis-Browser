@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nivrok — The web, minus the noise</title>
+  <meta name="description" content="Nivrok is a free, open-source Android browser that blocks ads, trackers, popups and redirect hijacks before they load. Under 1 MB. No accounts. No cost." />
+  <meta name="theme-color" content="#07090c" />
+  <meta property="og:title" content="Nivrok — The web, minus the noise" />
+  <meta property="og:description" content="A free, open-source Android browser that blocks ads, trackers and popups before they load." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="assets/nivrok-logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <!-- ============ NAV ============ -->
+  <header class="nav" id="nav">
+    <div class="wrap nav-inner">
+      <a href="#top" class="brand" aria-label="Nivrok home">
+        <svg class="brand-mark" viewBox="0 0 1320 1320" aria-hidden="true"><path fill="#FF4F00" d="M330 82H990L1238 330V990L990 1238H330L82 990V330Z"/><path fill="#0B0D0E" d="M371 371H526L794 711V371H949V948H794L526 608V948H371Z"/></svg>
+        <span>Nivrok</span>
+      </a>
+      <nav class="nav-links" id="navLinks" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#support">Support</a>
+        <button type="button" class="link-btn" data-open-contact>Contact</button>
+      </nav>
+      <div class="nav-cta">
+        <a class="btn btn-primary btn-sm" data-download href="#download">Get the APK</a>
+        <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks">
+          <span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ HERO ============ -->
+    <section class="hero" id="top">
+      <div class="hero-grid-bg" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow reveal"><span class="dot"></span> Free &amp; open-source Android browser</p>
+          <h1 class="reveal">The web,<br /><span class="grad">minus the noise.</span></h1>
+          <p class="lede reveal">
+            Nivrok blocks ads, trackers, pop-unders and redirect hijacks <em>before they load</em> —
+            so pages open faster, videos play clean, and nobody follows you around.
+            Under 1&nbsp;MB. No account. No cost. Ever.
+          </p>
+          <div class="hero-actions reveal">
+            <a class="btn btn-primary" data-download href="#download">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16" /></svg>
+              Download for Android
+            </a>
+            <a class="btn btn-ghost" data-repo-link href="https://github.com/itripathiharsh/Aegis-Browser" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-4 1.3-4-2-6-2.5m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.9 2.3 5.9 2.6 5.9 2.6a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.5 9c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /></svg>
+              View source
+            </a>
+          </div>
+          <dl class="hero-stats reveal">
+            <div><dt>Filter rules</dt><dd><span data-count="52000">0</span>+</dd></div>
+            <div><dt>Release APK</dt><dd>~800<small>KB</small></dd></div>
+            <div><dt>Permissions</dt><dd>2</dd></div>
+            <div><dt>Price</dt><dd>₹0</dd></div>
+          </dl>
+        </div>
+
+        <div class="hero-stage" aria-hidden="true">
+          <canvas id="hero3d"></canvas>
+          <img class="hero-fallback" src="assets/nivrok-logo.svg" alt="" />
+          <div class="shield-hud">
+            <span class="hud-label">Shields up</span>
+            <span class="hud-count"><span id="hudCount">0</span> blocked</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ticker" aria-label="Things Nivrok blocks">
+        <div class="ticker-track">
+          <span>Video pre-rolls</span><span>Pop-unders</span><span>Tracking pixels</span><span>Redirect chains</span><span>Banner ads</span><span>Fingerprinting scripts</span><span>New-tab hijacks</span><span>Overlay ads</span><span>Cryptominers</span><span>Analytics beacons</span>
+          <span>Video pre-rolls</span><span>Pop-unders</span><span>Tracking pixels</span><span>Redirect chains</span><span>Banner ads</span><span>Fingerprinting scripts</span><span>New-tab hijacks</span><span>Overlay ads</span><span>Cryptominers</span><span>Analytics beacons</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="section how" id="how">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="kicker">How it works</p>
+          <h2>Ads never reach your screen.<br />They're stopped at the door.</h2>
+          <p class="sub">Most "ad blockers" hide ads after your phone has already downloaded them. Nivrok checks every single network request first — and drops the junk before a byte is spent on it.</p>
+        </header>
+
+        <div class="how-grid">
+          <ol class="steps">
+            <li class="step reveal">
+              <span class="step-n">01</span>
+              <div>
+                <h3>A page asks for 140 things</h3>
+                <p>A typical news site loads scripts, images and frames from dozens of domains. Many of them exist only to sell your attention.</p>
+              </div>
+            </li>
+            <li class="step reveal">
+              <span class="step-n">02</span>
+              <div>
+                <h3>Every request hits the filter</h3>
+                <p>A native domain index checks each request against 52,000+ rules from EasyList, EasyPrivacy and uBlock Origin — in microseconds.</p>
+              </div>
+            </li>
+            <li class="step reveal">
+              <span class="step-n">03</span>
+              <div>
+                <h3>Junk gets an empty reply</h3>
+                <p>Blocked requests get nothing back. Leftover ad slots and video overlays are tidied away, and pop-ups never get a window to open in.</p>
+              </div>
+            </li>
+          </ol>
+
+          <div class="console reveal" role="img" aria-label="Animated log of requests being allowed or blocked">
+            <div class="console-bar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="console-title">shields · live request log</span>
+              <span class="console-tally"><b id="logBlocked">0</b> blocked · <b id="logAllowed">0</b> allowed</span>
+            </div>
+            <div class="console-body" id="consoleBody"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section class="section features" id="features">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="kicker">Features</p>
+          <h2>Everything a browser should do.<br />Nothing it shouldn't.</h2>
+        </header>
+
+        <div class="bento">
+          <article class="card card-xl tilt reveal">
+            <div class="card-glow"></div>
+            <div class="card-icon">
+              <svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+            </div>
+            <h3>Network-level Shields</h3>
+            <p>Ads, trackers and malware domains are blocked before they download. A live counter shows exactly how much junk Nivrok kept off your screen — per page and in total.</p>
+            <div class="meter" aria-hidden="true">
+              <div class="meter-row"><span>Ads</span><i style="--w:86%"></i><b>86</b></div>
+              <div class="meter-row"><span>Trackers</span><i style="--w:64%"></i><b>64</b></div>
+              <div class="meter-row"><span>Pop-ups</span><i style="--w:22%"></i><b>22</b></div>
+            </div>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m9 10 6 4M15 10l-6 4" /></svg></div>
+            <h3>Popup &amp; redirect killer</h3>
+            <p>Pop-unders, surprise new tabs and click-hijack redirect chains are shut down at the WebView level.</p>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7" /><path d="m16 15 4 4M20 15l-4 4" /></svg></div>
+            <h3>Cosmetic cleanup</h3>
+            <p>Empty ad boxes, "disable your ad blocker" walls and video overlays are hidden so pages look tidy.</p>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M3 12c2.5-4 5.5-6 9-6s6.5 2 9 6c-2.5 4-5.5 6-9 6s-6.5-2-9-6Z" /><path d="M4 4l16 16" /></svg></div>
+            <h3>Incognito tabs</h3>
+            <p>Private tabs leave no history, cookies or cache behind when you close them.</p>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1.5" /><rect x="13" y="4" width="8" height="7" rx="1.5" /><rect x="3" y="13" width="8" height="7" rx="1.5" /><rect x="13" y="13" width="8" height="7" rx="1.5" /></svg></div>
+            <h3>Tab groups</h3>
+            <p>Keep work, study and shopping apart. Swipe through tabs in a clean grid.</p>
+          </article>
+
+          <article class="card card-wide tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z" /><path d="M8 11h8M8 15h8M8 7h4" /></svg></div>
+            <h3>Reader view, find-in-page, pull-to-refresh</h3>
+            <p>Strip a long article down to just the words. Search any page. Pull down to reload. The small things that make a browser feel right.</p>
+            <div class="chips">
+              <span>Reader view</span><span>Find in page</span><span>Desktop mode</span><span>Long-press link menu</span><span>File uploads</span><span>Light &amp; dark themes</span>
+            </div>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /></svg></div>
+            <h3>Your search, your choice</h3>
+            <p>DuckDuckGo, Brave Search, Startpage or Google — with suggestions as you type.</p>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0-4-4m4 4 4-4" /><path d="M5 18h14" /></svg></div>
+            <h3>Downloads &amp; bookmarks</h3>
+            <p>A real downloads manager and native bookmarks. Home-screen favourites one tap away.</p>
+          </article>
+
+          <article class="card tilt reveal">
+            <div class="card-icon"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 9" /><path d="M20 4v5h-5" /><path d="M20 12a8 8 0 0 1-14 5.3L4 15" /><path d="M4 20v-5h5" /></svg></div>
+            <h3>Updates itself</h3>
+            <p>New versions arrive straight from GitHub Releases, with clear notes on what changed.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PHONE SHOWCASE ============ -->
+    <section class="section showcase" id="showcase">
+      <div class="wrap showcase-inner">
+        <div class="showcase-copy">
+          <p class="kicker reveal">Light. Fast. Yours.</p>
+          <h2 class="reveal">Built for one hand<br />and slow networks.</h2>
+          <p class="sub reveal">Nivrok's whole app is smaller than a single photo on your phone. Blocking ads means pages download less — so it's quicker on 4G and kinder to your data pack and your battery.</p>
+          <ul class="ticks reveal">
+            <li>Runs on Android 7.0 and up</li>
+            <li>Only two permissions: internet and network status</li>
+            <li>Smooth full-screen video, including HLS streams</li>
+            <li>Ready for TV remotes and D-pad navigation</li>
+          </ul>
+        </div>
+
+        <div class="phone-stage" id="phoneStage" aria-hidden="true">
+          <div class="phone" id="phone">
+            <div class="phone-screen">
+              <div class="ph-status"><span>9:41</span><span class="ph-icons"><i></i><i></i><i></i></span></div>
+              <div class="ph-bar">
+                <span class="ph-url"><svg viewBox="0 0 24 24"><rect x="6" y="10" width="12" height="9" rx="2" /><path d="M9 10V8a3 3 0 0 1 6 0v2" /></svg>nivrok://home</span>
+                <span class="ph-shield"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z" /></svg><b id="phCount">1,284</b></span>
+              </div>
+              <div class="ph-home">
+                <svg class="ph-logo" viewBox="0 0 1320 1320"><path fill="#FF4F00" d="M330 82H990L1238 330V990L990 1238H330L82 990V330Z"/><path fill="#0B0D0E" d="M371 371H526L794 711V371H949V948H794L526 608V948H371Z"/></svg>
+                <div class="ph-search">Search or type a URL</div>
+                <div class="ph-favs">
+                  <span><i style="background:#ff4f00"></i>News</span>
+                  <span><i style="background:#38bdf8"></i>Wiki</span>
+                  <span><i style="background:#22c55e"></i>Maps</span>
+                  <span><i style="background:#a78bfa"></i>Music</span>
+                  <span><i style="background:#f59e0b"></i>Shop</span>
+                  <span><i style="background:#ef4444"></i>Video</span>
+                  <span><i style="background:#14b8a6"></i>Mail</span>
+                  <span><i style="background:#64748b"></i>More</span>
+                </div>
+                <div class="ph-card">
+                  <div><small>Blocked this week</small><b>9,412</b></div>
+                  <div><small>Trackers stopped</small><b>3,077</b></div>
+                </div>
+              </div>
+              <div class="ph-nav"><i></i><i></i><i class="on"></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="phone-shadow"></div>
+          <div class="float-chip c1">✋ ads.doubleclick.net</div>
+          <div class="float-chip c2">✋ pop-under blocked</div>
+          <div class="float-chip c3 ok">✓ page clean · 31 requests blocked</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PROMISE ============ -->
+    <section class="section promise">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="kicker">The promise</p>
+          <h2>What Nivrok will never do.</h2>
+        </header>
+        <div class="nevers">
+          <div class="never reveal"><b>No accounts</b><span>Open it and browse. Nothing to sign up for.</span></div>
+          <div class="never reveal"><b>No ads of its own</b><span>No "acceptable ads" deals. No sponsored tiles.</span></div>
+          <div class="never reveal"><b>No crypto, no feeds</b><span>No wallets, tokens or news feeds stuffed into the app.</span></div>
+          <div class="never reveal"><b>No paywall</b><span>Every feature is free. There is no "Pro".</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DOWNLOAD ============ -->
+    <section class="section download" id="download">
+      <div class="wrap">
+        <div class="download-card reveal">
+          <div class="download-copy">
+            <p class="kicker">Download</p>
+            <h2>Get Nivrok in under a minute.</h2>
+            <p class="sub">Nivrok is distributed as an APK on GitHub, built automatically from the public source code.</p>
+            <div class="hero-actions">
+              <a class="btn btn-primary btn-lg" data-download-direct href="https://github.com/itripathiharsh/Aegis-Browser/releases/latest" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16" /></svg>
+                Download latest APK
+              </a>
+            </div>
+            <p class="release-meta" id="releaseMeta">Latest release on GitHub · Android 7.0+</p>
+          </div>
+          <ol class="install">
+            <li><b>Open the latest release</b><span>Tap the button and find the <code>.apk</code> file under <em>Assets</em>.</span></li>
+            <li><b>Allow the install</b><span>Android will ask to allow installs from your browser. Say yes for this one file.</span></li>
+            <li><b>If Play Protect asks</b><span>New open-source apps show "Unrecognised developer". Tap <em>More details → Install anyway</em>.</span></li>
+            <li><b>Browse in peace</b><span>Shields are on by default. Future updates arrive inside the app.</span></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SUPPORT ============ -->
+    <section class="section support" id="support">
+      <div class="wrap">
+        <header class="section-head center reveal">
+          <svg class="support-mark" viewBox="0 0 1320 1320" aria-hidden="true"><path fill="#FF4F00" d="M330 82H990L1238 330V990L990 1238H330L82 990V330Z"/><path fill="#0B0D0E" d="M371 371H526L794 711V371H949V948H794L526 608V948H371Z"/></svg>
+          <p class="kicker">Support the project</p>
+          <h2>Show your support for Nivrok.</h2>
+          <p class="sub">Nivrok is built by one independent developer and given away for free. There are no investors and no ads paying the bills — just people who think the web should be calmer. If Nivrok saved you from even one pop-up, here's how you can help it grow.</p>
+        </header>
+
+        <div class="support-grid">
+          <a class="support-card reveal" data-repo-link href="https://github.com/itripathiharsh/Aegis-Browser" target="_blank" rel="noopener">
+            <span class="s-icon">★</span>
+            <b>Star it on GitHub</b>
+            <span>A star helps other people find Nivrok and tells the developer it's worth building.</span>
+            <em>Give a star →</em>
+          </a>
+          <button type="button" class="support-card reveal" id="shareBtn">
+            <span class="s-icon">↗</span>
+            <b>Share with a friend</b>
+            <span>Know someone fed up with pop-ups? Send them Nivrok. Word of mouth is all the marketing it has.</span>
+            <em id="shareLabel">Share Nivrok →</em>
+          </button>
+          <button type="button" class="support-card reveal" data-open-contact data-topic="bug">
+            <span class="s-icon">⚑</span>
+            <b>Report what's broken</b>
+            <span>Found a site that won't load, or an ad that slipped through? Every report makes Nivrok better for everyone.</span>
+            <em>Report an issue →</em>
+          </button>
+          <a class="support-card reveal" data-repo-link href="https://github.com/itripathiharsh/Aegis-Browser" target="_blank" rel="noopener">
+            <span class="s-icon">&lt;/&gt;</span>
+            <b>Contribute</b>
+            <span>Code, filter rules, translations or design — pull requests are welcome.</span>
+            <em>Open the repo →</em>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CONTACT CTA ============ -->
+    <section class="section contact-cta">
+      <div class="wrap">
+        <div class="cta-band reveal">
+          <div>
+            <h2>Got feedback, a bug, or an idea?</h2>
+            <p>Messages go straight to the developer. Real person, real replies.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-lg" data-open-contact>Open contact panel</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="footer">
+    <div class="wrap footer-grid">
+      <div class="footer-brand">
+        <a href="#top" class="brand">
+          <svg class="brand-mark" viewBox="0 0 1320 1320" aria-hidden="true"><path fill="#FF4F00" d="M330 82H990L1238 330V990L990 1238H330L82 990V330Z"/><path fill="#0B0D0E" d="M371 371H526L794 711V371H949V948H794L526 608V948H371Z"/></svg>
+          <span>Nivrok</span>
+        </a>
+        <p>A free, open-source, privacy-first browser for Android. The web, minus the noise.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a data-repo-link href="https://github.com/itripathiharsh/Aegis-Browser" target="_blank" rel="noopener">Source code</a>
+      </div>
+      <div class="footer-col">
+        <h4>Help</h4>
+        <button type="button" class="link-btn" data-open-contact data-topic="feedback">Send feedback</button>
+        <button type="button" class="link-btn" data-open-contact data-topic="bug">Report an issue</button>
+        <button type="button" class="link-btn" data-open-contact data-topic="idea">Suggest a feature</button>
+        <a href="#support">Support the project</a>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <p class="footer-contact-name">Harsh Tripathi</p>
+        <a class="footer-mail" data-mail href="mailto:harsh.tripathi.cs@gmail.com">harsh.tripathi.cs@gmail.com</a>
+        <button type="button" class="link-btn copy-mail" data-copy-mail>Copy email</button>
+      </div>
+    </div>
+    <div class="wrap footer-base">
+      <span>© <span id="year">2026</span> Nivrok. Free and open-source, forever.</span>
+      <span>No cookies. No trackers. Not even on this page.</span>
+    </div>
+  </footer>
+
+  <!-- ============ CONTACT PANEL ============ -->
+  <div class="contact-scrim" id="contactScrim" hidden></div>
+  <aside class="contact-panel" id="contactPanel" role="dialog" aria-modal="true" aria-labelledby="contactTitle" aria-hidden="true">
+    <div class="cp-head">
+      <div>
+        <p class="kicker">Contact</p>
+        <h2 id="contactTitle">Talk to the developer</h2>
+      </div>
+      <button type="button" class="cp-close" id="contactClose" aria-label="Close contact panel">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+    </div>
+
+    <form class="cp-form" id="contactForm" novalidate>
+      <fieldset class="cp-topics">
+        <legend>What's this about?</legend>
+        <label><input type="radio" name="topic" value="feedback" checked /><span>💬 Feedback</span></label>
+        <label><input type="radio" name="topic" value="bug" /><span>🐞 Bug / issue</span></label>
+        <label><input type="radio" name="topic" value="site" /><span>🌐 Site broken / ad got through</span></label>
+        <label><input type="radio" name="topic" value="idea" /><span>💡 Feature idea</span></label>
+      </fieldset>
+
+      <div class="cp-row">
+        <label class="field">
+          <span>Your name <i>(optional)</i></span>
+          <input type="text" name="name" autocomplete="name" />
+        </label>
+        <label class="field">
+          <span>Subject</span>
+          <input type="text" name="subject" id="cpSubject" required placeholder="Short summary" />
+        </label>
+      </div>
+
+      <label class="field" id="urlField" hidden>
+        <span>Website address</span>
+        <input type="url" name="url" placeholder="https://example.com/page" />
+      </label>
+
+      <div class="cp-row" id="deviceFields" hidden>
+        <label class="field">
+          <span>Nivrok version</span>
+          <input type="text" name="version" placeholder="e.g. 1.0.8 (Settings → About)" />
+        </label>
+        <label class="field">
+          <span>Phone &amp; Android version</span>
+          <input type="text" name="device" placeholder="e.g. Redmi Note 12, Android 14" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span id="msgLabel">Your message</span>
+        <textarea name="message" id="cpMessage" rows="6" required placeholder="Tell us what you think…"></textarea>
+      </label>
+
+      <p class="cp-error" id="cpError" role="alert" hidden></p>
+
+      <div class="cp-actions">
+        <button type="submit" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>
+          Send by email
+        </button>
+        <button type="button" class="btn btn-ghost" id="ghIssueBtn">Open as GitHub issue</button>
+      </div>
+      <p class="cp-note">"Send by email" opens your mail app with everything filled in, addressed to <a data-mail href="mailto:harsh.tripathi.cs@gmail.com">harsh.tripathi.cs@gmail.com</a>. Nothing is sent from this page.</p>
+    </form>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+  <script src="assets/app.js" defer></script>
+</body>
+</html>

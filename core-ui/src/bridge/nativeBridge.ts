@@ -20,7 +20,7 @@ import {
   loadBundledAndCachedFilters,
   syncRemoteFilterMirrors,
 } from '../adblock/updater';
-import { AEGIS_APP_VERSION, AEGIS_GITHUB_REPO } from '../config/updaterConfig';
+import { NIVROK_APP_VERSION, NIVROK_GITHUB_REPO } from '../config/updaterConfig';
 import { isNewerVersion, pickApkAsset, type GithubReleaseAsset } from '../utils/semver';
 import { resolveOmniboxInput } from '../utils/urlResolver';
 import { isWebOSRuntime, type WebOSNativeHost } from './webosAdapter';
@@ -74,11 +74,11 @@ interface AndroidNativeHost extends WebOSNativeHost {
 
 declare global {
   interface Window {
-    AegisNative?: AndroidNativeHost;
-    __AEGIS_ON_STATE__?: (state: BrowserState) => void;
-    __AEGIS_ON_SYNC__?: (result: FilterSyncResult) => void;
-    __AEGIS_CLOSE_OVERLAY__?: () => void;
-    __AEGIS_FOCUS_OMNIBOX__?: () => void;
+    NivrokNative?: AndroidNativeHost;
+    __NIVROK_ON_STATE__?: (state: BrowserState) => void;
+    __NIVROK_ON_SYNC__?: (result: FilterSyncResult) => void;
+    __NIVROK_CLOSE_OVERLAY__?: () => void;
+    __NIVROK_FOCUS_OMNIBOX__?: () => void;
   }
 }
 
@@ -157,9 +157,9 @@ const DEFAULT_SHIELDS: ShieldsConfig = {
 const DEFAULT_UPDATE_STATE: AppUpdateState = {
   status: 'idle',
   popupVisible: false,
-  installedVersion: AEGIS_APP_VERSION,
+  installedVersion: NIVROK_APP_VERSION,
   installedVersionCode: 1,
-  githubRepo: AEGIS_GITHUB_REPO,
+  githubRepo: NIVROK_GITHUB_REPO,
   latestVersion: null,
   releaseTitle: null,
   changelog: null,
@@ -180,7 +180,7 @@ const DEFAULT_DIAGNOSTICS: DiagnosticsState = {
   updatedFromVersion: null,
   nonFatalCount: 0,
   recentErrors: [],
-  reportText: 'Aegis Browser Diagnostics\nStatus: Clean (no crashes recorded).',
+  reportText: 'Nivrok Diagnostics\nStatus: Clean (no crashes recorded).',
 };
 
 export const DEFAULT_SETTINGS: BrowserSettings = {
@@ -241,11 +241,11 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
       JSON.parse(host.getInitialState()) as BrowserState
     );
 
-    window.__AEGIS_ON_STATE__ = (nextState: BrowserState) => {
+    window.__NIVROK_ON_STATE__ = (nextState: BrowserState) => {
       this.cachedState = normalizeBrowserState(nextState);
       this.listeners.forEach((fn) => fn(this.cachedState));
     };
-    window.__AEGIS_ON_SYNC__ = (result: FilterSyncResult) => {
+    window.__NIVROK_ON_SYNC__ = (result: FilterSyncResult) => {
       this.syncListeners.forEach((fn) => fn(result));
     };
   }
@@ -266,9 +266,10 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   }
 
   navigate(tabId: string, rawInput: string, engine: SearchEngineId = 'duckduckgo'): void {
-    const resolved = rawInput.startsWith('aegis://')
-      ? rawInput
-      : resolveOmniboxInput(rawInput, engine);
+    const resolved =
+      rawInput.startsWith('nivrok://') || rawInput.startsWith('aegis://')
+        ? 'nivrok://home'
+        : resolveOmniboxInput(rawInput, engine);
     this.host.navigate(tabId, resolved);
   }
 
@@ -289,12 +290,12 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   }
 
   createTab(url?: string): void {
-    this.host.createTab(url ?? 'aegis://home');
+    this.host.createTab(url ?? 'nivrok://home');
   }
 
   createIncognitoTab(url?: string): void {
     if ('createIncognitoTab' in this.host && typeof this.host.createIncognitoTab === 'function') {
-      this.host.createIncognitoTab(url ?? 'aegis://home');
+      this.host.createIncognitoTab(url ?? 'nivrok://home');
     }
   }
 
@@ -636,8 +637,8 @@ class StandalonePreviewBridge implements BrowserBridge {
   constructor() {
     const initialTab: TabInfo = {
       id: 'tab-1',
-      title: 'Aegis Start',
-      url: 'aegis://home',
+      title: 'Nivrok Start',
+      url: 'nivrok://home',
       isLoading: false,
       progress: 100,
       canGoBack: false,
@@ -727,15 +728,15 @@ class StandalonePreviewBridge implements BrowserBridge {
       return {
         ...t,
         url: resolved,
-        title: resolved === 'aegis://home' ? (t.incognito ? 'Private Tab' : 'Aegis Start') : host ?? resolved,
-        canGoBack: resolved !== 'aegis://home',
+        title: resolved === 'nivrok://home' ? (t.incognito ? 'Private Tab' : 'Nivrok Start') : host ?? resolved,
+        canGoBack: resolved !== 'nivrok://home',
         isLoading: false,
         progress: 100,
       };
     });
 
     const nextTelemetry = { ...this.state.telemetry };
-    if (!resolved.startsWith('aegis://')) {
+    if (!resolved.startsWith('nivrok://')) {
       const sampleProbes = [
         'https://securepubads.g.doubleclick.net/tag/js/gpt.js',
         'https://www.google-analytics.com/g/collect?v=2',
@@ -762,7 +763,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       nextTelemetry.recentEvents = [...newEvents, ...nextTelemetry.recentEvents].slice(0, 30);
     }
 
-    if (!resolved.startsWith('aegis://') && !activeTarget?.incognito) {
+    if (!resolved.startsWith('nivrok://') && !activeTarget?.incognito) {
       const host = extractHost(resolved) ?? resolved;
       const now = Date.now();
       if (this.state.settings?.saveHistory ?? true) {
@@ -801,7 +802,7 @@ class StandalonePreviewBridge implements BrowserBridge {
     this.state = {
       ...this.state,
       tabs: tabs.map((t) =>
-        t.id === tabId && !resolved.startsWith('aegis://')
+        t.id === tabId && !resolved.startsWith('nivrok://')
           ? { ...t, blockedCount: nextTelemetry.totalBlocked }
           : t
       ),
@@ -812,7 +813,7 @@ class StandalonePreviewBridge implements BrowserBridge {
   }
 
   goBack(tabId: string): void {
-    this.navigate(tabId, 'aegis://home');
+    this.navigate(tabId, 'nivrok://home');
   }
 
   goForward(_tabId: string): void {}
@@ -821,10 +822,10 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   createTab(url?: string): void {
     const id = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
-    const targetUrl = url ?? 'aegis://home';
+    const targetUrl = url ?? 'nivrok://home';
     const newTab: TabInfo = {
       id,
-      title: targetUrl === 'aegis://home' ? 'New Tab' : extractHost(targetUrl) ?? targetUrl,
+      title: targetUrl === 'nivrok://home' ? 'New Tab' : extractHost(targetUrl) ?? targetUrl,
       url: targetUrl,
       isLoading: false,
       progress: 100,
@@ -848,10 +849,10 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   createIncognitoTab(url?: string): void {
     const id = `tab-inc-${Date.now().toString(36)}`;
-    const targetUrl = url ?? 'aegis://home';
+    const targetUrl = url ?? 'nivrok://home';
     const newTab: TabInfo = {
       id,
-      title: targetUrl === 'aegis://home' ? 'Private Tab' : extractHost(targetUrl) ?? targetUrl,
+      title: targetUrl === 'nivrok://home' ? 'Private Tab' : extractHost(targetUrl) ?? targetUrl,
       url: targetUrl,
       isLoading: false,
       progress: 100,
@@ -927,7 +928,7 @@ class StandalonePreviewBridge implements BrowserBridge {
   closeTabGroup(groupId: string): void {
     const remaining = this.state.tabs.filter((t) => t.groupId !== groupId);
     if (remaining.length === 0) {
-      this.createTab('aegis://home');
+      this.createTab('nivrok://home');
       return;
     }
     this.state = {
@@ -960,13 +961,13 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   closeTab(tabId: string): void {
     const victim = this.state.tabs.find((t) => t.id === tabId);
-    if (victim && !victim.incognito && !victim.url.startsWith('aegis://')) {
+    if (victim && !victim.incognito && !victim.url.startsWith('nivrok://') && !victim.url.startsWith('aegis://')) {
       this.closedStack.unshift(victim);
       if (this.closedStack.length > 15) this.closedStack.pop();
     }
     const remaining = this.state.tabs.filter((t) => t.id !== tabId);
     if (remaining.length === 0) {
-      this.createTab('aegis://home');
+      this.createTab('nivrok://home');
       return;
     }
     const nextActive =
@@ -1192,7 +1193,7 @@ class StandalonePreviewBridge implements BrowserBridge {
             ...this.state.appUpdate,
             status: 'unconfigured',
             message:
-              'Set AEGIS_GITHUB_REPO in updaterConfig.ts / build.gradle.kts to check GitHub Releases.',
+              'Set NIVROK_GITHUB_REPO in updaterConfig.ts / build.gradle.kts to check GitHub Releases.',
             checkedAtIso: new Date().toISOString(),
           },
         };
@@ -1327,7 +1328,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       this.state.diagnostics?.reportText ?? DEFAULT_DIAGNOSTICS.reportText
     );
     window.open(
-      `mailto:harsh.tripathi.cs@gmail.com?subject=${encodeURIComponent('Aegis Browser Diagnostics Report')}&body=${body}`,
+      `mailto:harsh.tripathi.cs@gmail.com?subject=${encodeURIComponent('Nivrok Diagnostics Report')}&body=${body}`,
       '_blank'
     );
   }
@@ -1349,10 +1350,10 @@ let singletonBridge: BrowserBridge | null = null;
 
 export function getBrowserBridge(): BrowserBridge {
   if (singletonBridge) return singletonBridge;
-  if (typeof window !== 'undefined' && window.AegisNative) {
-    singletonBridge = new NativeAndroidOrWebOSBridge(window.AegisNative, true);
-  } else if (typeof window !== 'undefined' && window.AegisWebOS) {
-    singletonBridge = new NativeAndroidOrWebOSBridge(window.AegisWebOS, false);
+  if (typeof window !== 'undefined' && window.NivrokNative) {
+    singletonBridge = new NativeAndroidOrWebOSBridge(window.NivrokNative, true);
+  } else if (typeof window !== 'undefined' && window.NivrokWebOS) {
+    singletonBridge = new NativeAndroidOrWebOSBridge(window.NivrokWebOS, false);
   } else {
     singletonBridge = new StandalonePreviewBridge();
   }

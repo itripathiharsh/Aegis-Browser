@@ -1,6 +1,6 @@
-! Title: Aegis Privacy & Tracker Bundle (Preloaded Offline Bundle)
+! Title: Nivrok Privacy & Tracker Bundle (Preloaded Offline Bundle)
 ! Sources: Peter Lowe Ad & Tracking + uBlock Privacy
-! Aegis Core Privacy & Tracker Rules
+! Nivrok Core Privacy & Tracker Rules
 ||google-analytics.com^
 ||googletagmanager.com^
 ||clarity.ms^

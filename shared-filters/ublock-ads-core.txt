@@ -1,6 +1,6 @@
-! Title: Aegis Popups, Badware & Redirect Bundle (Preloaded Offline Bundle)
+! Title: Nivrok Popups, Badware & Redirect Bundle (Preloaded Offline Bundle)
 ! Sources: uBlock Origin Badware + Popup/Video Ad Rules
-! Aegis Core Popup, Redirect & Video Ad Rules
+! Nivrok Core Popup, Redirect & Video Ad Rules
 ||popads.net^
 ||popcash.net^
 ||propellerads.com^

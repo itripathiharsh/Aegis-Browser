@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AegisBrowser"
+rootProject.name = "Nivrok"
 include(":app")

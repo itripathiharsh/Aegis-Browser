@@ -13,8 +13,8 @@ describe('omnibox suggestions', () => {
     },
     {
       id: '2',
-      url: 'https://github.com/itripathiharsh/Aegis-Browser',
-      title: 'GitHub - itripathiharsh/Aegis-Browser',
+      url: 'https://github.com/itripathiharsh/Nivrok',
+      title: 'GitHub - Nivrok Browser',
       host: 'github.com',
       visitedAtMs: 2000,
     },
@@ -63,11 +63,11 @@ describe('omnibox suggestions', () => {
       title: 'Kotlin Docs',
     });
 
-    const gh = buildOmniboxSuggestions('aegis', history, bookmarks);
+    const gh = buildOmniboxSuggestions('nivrok', history, bookmarks);
     expect(gh[0]).toMatchObject({
       kind: 'history',
       subtitle: 'github.com',
-      navigateTarget: 'https://github.com/itripathiharsh/Aegis-Browser',
+      navigateTarget: 'https://github.com/itripathiharsh/Nivrok',
     });
   });
 });

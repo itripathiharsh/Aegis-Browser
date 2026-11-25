@@ -1,8 +1,8 @@
 import { FilterEngine } from './filterEngine';
 import type { BlockCategory, FilterSource, FilterSyncResult } from './types';
 
-const CACHE_KEY_PREFIX = 'aegis_filter_cache_v1_';
-const META_KEY = 'aegis_filter_meta_v1';
+const CACHE_KEY_PREFIX = 'nivrok_filter_cache_v1_';
+const META_KEY = 'nivrok_filter_meta_v1';
 
 const BUNDLED_ASSETS: Array<{ path: string; category: BlockCategory }> = [
   { path: './filters/easylist-core.txt', category: 'ads' },

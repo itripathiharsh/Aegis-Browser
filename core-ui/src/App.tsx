@@ -24,8 +24,8 @@ import { UpdateModal } from './components/UpdateModal';
 import { useDpadNavigation } from './hooks/useDpadNavigation';
 
 const LEGACY_BOOKMARKS_KEY = 'aegis_bookmarks_v2';
-const ENGINE_STORAGE_KEY = 'aegis_search_engine_v1';
-const THEME_STORAGE_KEY = 'aegis_theme_v1';
+const ENGINE_STORAGE_KEY = 'nivrok_search_engine_v1';
+const THEME_STORAGE_KEY = 'nivrok_theme_v1';
 
 function loadFallbackSearchEngine(): SearchEngineId {
   try {
@@ -169,7 +169,8 @@ export const App: React.FC = () => {
   const activeTab =
     state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
 
-  const isInternalPage = activeTab.url.startsWith('aegis://');
+  const isInternalPage =
+    activeTab.url.startsWith('nivrok://') || activeTab.url.startsWith('aegis://');
   const overlayExpanded =
     activeDrawer !== null ||
     menuOpen ||
@@ -210,14 +211,14 @@ export const App: React.FC = () => {
   }, [findBarOpen, isInternalPage]);
 
   useEffect(() => {
-    window.__AEGIS_CLOSE_OVERLAY__ = () => {
+    window.__NIVROK_CLOSE_OVERLAY__ = () => {
       setMenuOpen(false);
       setActiveDrawer(null);
       setOmniboxSuggestionsOpen(false);
       bridge.dismissContextMenu();
       omniboxInputRef.current?.blur();
     };
-    window.__AEGIS_FOCUS_OMNIBOX__ = () => {
+    window.__NIVROK_FOCUS_OMNIBOX__ = () => {
       omniboxInputRef.current?.focus();
       omniboxInputRef.current?.select();
     };
@@ -324,7 +325,7 @@ export const App: React.FC = () => {
 
   return (
     <div
-      className="aegis-shell"
+      className="nivrok-shell"
       data-bar-only={!overlayExpanded ? 'true' : 'false'}
     >
       <TopBar
@@ -354,17 +355,17 @@ export const App: React.FC = () => {
             ? bridge.stopLoading(activeTab.id)
             : bridge.reload(activeTab.id)
         }
-        onGoHome={() => bridge.navigate(activeTab.id, 'aegis://home', searchEngine)}
+        onGoHome={() => bridge.navigate(activeTab.id, 'nivrok://home', searchEngine)}
         onToggleBookmark={handleToggleCurrentBookmark}
         onToggleDesktopMode={() =>
           bridge.setDesktopMode(activeTab.id, !activeTab.desktopMode)
         }
         onToggleReaderMode={() => bridge.toggleReaderMode(activeTab.id)}
-        onNewTab={() => bridge.createTab('aegis://home')}
-        onNewIncognitoTab={() => bridge.createIncognitoTab('aegis://home')}
+        onNewTab={() => bridge.createTab('nivrok://home')}
+        onNewIncognitoTab={() => bridge.createIncognitoTab('nivrok://home')}
         onSwitchTab={(id) => bridge.switchTab(id)}
         onCloseTab={(id) => bridge.closeTab(id)}
-        onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'aegis://home', true)}
+        onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'nivrok://home', true)}
         onCopyCurrentUrl={() => {
           bridge.copyText(activeTab.url);
           showToast('Link copied');
@@ -399,7 +400,7 @@ export const App: React.FC = () => {
           onAddFavorite={(title, url) => bridge.addBookmark(title, url)}
           onRemoveFavorite={(id) => bridge.removeBookmark(id)}
           onDismissRecommendation={(host) => bridge.dismissRecommendation(host)}
-          onOpenIncognitoTab={() => bridge.createIncognitoTab('aegis://home')}
+          onOpenIncognitoTab={() => bridge.createIncognitoTab('nivrok://home')}
           onOpenShields={() => setActiveDrawer('shields')}
           onOpenBookmarks={() => setActiveDrawer('bookmarks')}
           onOpenHistory={() => setActiveDrawer('history')}
@@ -434,7 +435,7 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="secondary-btn"
-                onClick={() => bridge.navigate(activeTab.id, 'aegis://home')}
+                onClick={() => bridge.navigate(activeTab.id, 'nivrok://home')}
               >
                 Home
               </button>
@@ -451,15 +452,15 @@ export const App: React.FC = () => {
           onSelectTab={(id) => bridge.switchTab(id)}
           onCloseTab={(id) => bridge.closeTab(id)}
           onNewTab={() => {
-            bridge.createTab('aegis://home');
+            bridge.createTab('nivrok://home');
             setActiveDrawer(null);
           }}
           onNewIncognitoTab={() => {
-            bridge.createIncognitoTab('aegis://home');
+            bridge.createIncognitoTab('nivrok://home');
             setActiveDrawer(null);
           }}
           onReopenClosedTab={() => bridge.reopenClosedTab()}
-          onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'aegis://home', true)}
+          onAddTabToGroup={(sourceId) => bridge.openInTabGroup(sourceId, 'nivrok://home', true)}
           onUngroupTab={(tabId) => bridge.ungroupTab(tabId)}
           onCloseGroup={(groupId) => bridge.closeTabGroup(groupId)}
           onToggleDesktopMode={(tab) =>
@@ -581,7 +582,7 @@ export const App: React.FC = () => {
       )}
 
       {toastMsg && (
-        <div className="aegis-toast" role="status" aria-live="polite">
+        <div className="nivrok-toast" role="status" aria-live="polite">
           {toastMsg}
         </div>
       )}

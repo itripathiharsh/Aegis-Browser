@@ -1,4 +1,4 @@
-# Aegis Browser — Design Plan
+# Nivrok — Design Plan
 
 IDEA: Obsidian Shield Console — a precision dark-mode browser deck engineered for OLED phones and 10-foot TVs, pairing calm slate surfaces with a single live amber-flame privacy shield telemetry counter.
 
@@ -26,7 +26,7 @@ LAYOUT:
 +-----------------------------------------------------------------------+
 |                                                                       |
 |  Content WebView (Native hardware-accelerated viewport)               |
-|  OR Expanded Aegis Start Page / Tabs / Bookmarks / Shields Drawer     |
+|  OR Expanded Nivrok Start Page / Tabs / Bookmarks / Shields Drawer    |
 |                                                                       |
 +-----------------------------------------------------------------------+
 ```
@@ -40,11 +40,11 @@ SHAPE:
 - 999px (`--radius-pill`) for live Shields blocked counter and tab count badges
 
 MOTION:
-- Orchestrated entrance: crisp 220ms fade-lift on Start Page shield deck when opening `aegis://home`.
+- Orchestrated entrance: crisp 220ms fade-lift on Start Page shield deck when opening `nivrok://home`.
 - Reactive microinteractions: 110ms press scale (`0.97`), subtle amber pulse ring on the live blocked counter when new requests are blocked; fully disabled under `prefers-reduced-motion: reduce`.
 
 IMAGERY:
-- 100% code-drawn inline SVG (geometric Aegis Crest logo, shield status emblem, crisp vector nav/media icons, subtle radial backdrop mesh — zero external image URLs).
+- 100% code-drawn inline SVG (geometric Nivrok Crest logo, shield status emblem, crisp vector nav/media icons, subtle radial backdrop mesh — zero external image URLs).
 
 PRINCIPLES:
 1. Content viewport comes first: chrome stays lean, zero bloated news feeds or crypto wallets.

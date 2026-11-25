@@ -3,13 +3,13 @@ import { parseReleaseNotes, stripInlineMarkdown } from './releaseNotes';
 
 describe('releaseNotes parser', () => {
   it('removes raw markdown asterisks, hashes, and backticks from release notes', () => {
-    const raw = `## Aegis Browser v1.0.5
+    const raw = `## Nivrok v1.0.8
 
 **What's new:**
 - Updated **ad-block** filter lists (\`EasyList\` + EasyPrivacy)
 - Stability and [playback](https://example.com) improvements
 
-**Install:** Download \`AegisBrowser-v1.0.5.apk\` below and install on your Android device.`;
+**Install:** Download \`Nivrok-v1.0.8.apk\` below and install on your Android device.`;
 
     const sections = parseReleaseNotes(raw);
     expect(sections).toEqual([

@@ -58,7 +58,7 @@ export const ShieldsPanel: React.FC<ShieldsPanelProps> = ({
       <div className="drawer-panel">
         <div className="drawer-header">
           <h2 id="shields-drawer-title" className="drawer-title">
-            Aegis Shields
+            Nivrok Shields
           </h2>
           <button type="button" className="secondary-btn" onClick={onClose}>
             Done
@@ -73,9 +73,9 @@ export const ShieldsPanel: React.FC<ShieldsPanelProps> = ({
               </span>
               <div style={{ minWidth: 0 }}>
                 <div className="row-title">
-                  {pageHost && !currentUrl.startsWith('aegis://')
+                  {pageHost && !currentUrl.startsWith('nivrok://') && !currentUrl.startsWith('aegis://')
                     ? `Shields for ${pageHost}`
-                    : 'Global Aegis Shields'}
+                    : 'Global Nivrok Shields'}
                 </div>
                 <div className="row-meta">
                   {siteEnabled
@@ -89,12 +89,12 @@ export const ShieldsPanel: React.FC<ShieldsPanelProps> = ({
               className="toggle-switch"
               aria-label="Toggle Shields protection"
               aria-pressed={
-                pageHost && !currentUrl.startsWith('aegis://')
+                pageHost && !currentUrl.startsWith('nivrok://') && !currentUrl.startsWith('aegis://')
                   ? siteEnabled
                   : shields.enabled
               }
               onClick={() => {
-                if (pageHost && !currentUrl.startsWith('aegis://')) {
+                if (pageHost && !currentUrl.startsWith('nivrok://') && !currentUrl.startsWith('aegis://')) {
                   onToggleSite(pageHost, !siteEnabled);
                 } else {
                   onUpdateConfig({ ...shields, enabled: !shields.enabled });
@@ -183,7 +183,7 @@ export const ShieldsPanel: React.FC<ShieldsPanelProps> = ({
         <div className="panel-card">
           <div className="toggle-row">
             <div>
-              <div className="row-title">Aegis Browser v{appUpdate.installedVersion}</div>
+              <div className="row-title">Nivrok v{appUpdate.installedVersion}</div>
               <div className="row-meta">
                 {appUpdate.checkedAtIso
                   ? `Checked ${appUpdate.checkedAtIso.slice(0, 10)}`

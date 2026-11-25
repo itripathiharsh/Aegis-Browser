@@ -43,7 +43,9 @@ export const BookmarksDrawer: React.FC<BookmarksDrawerProps> = ({
   const currentAlreadyBookmarked = bookmarks.some((b) => b.url === currentUrl);
 
   const visibleBookmarks = useMemo(() => {
-    const clean = bookmarks.filter((b) => !b.url.startsWith('aegis://player'));
+    const clean = bookmarks.filter(
+      (b) => !b.url.startsWith('nivrok://player') && !b.url.startsWith('aegis://player')
+    );
     const q = query.trim().toLowerCase();
     if (!q) return clean;
     return clean.filter(

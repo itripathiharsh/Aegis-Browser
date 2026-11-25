@@ -33,7 +33,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const isDownloading = update.status === 'downloading';
   const isReady = update.status === 'ready_to_install';
   const isAwaitingPerm = update.status === 'awaiting_permission';
-  const fileLabel = update.assetName || `AegisBrowser-${update.latestVersion ?? 'latest'}.apk`;
+  const fileLabel = update.assetName || `Nivrok-${update.latestVersion ?? 'latest'}.apk`;
 
   return (
     <div
@@ -56,7 +56,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 Update Available
               </h2>
               <p className="row-meta">
-                {update.releaseTitle || `Aegis Browser ${update.latestVersion ?? ''}`}
+                {update.releaseTitle || `Nivrok ${update.latestVersion ?? ''}`}
               </p>
             </div>
           </div>
@@ -133,7 +133,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 Select <strong>{fileLabel}</strong> and confirm <strong>Update</strong>.
               </li>
               <li>
-                Tap the <strong>&ldquo;Aegis Browser updated&rdquo;</strong> banner when done to jump right back into your tabs.
+                Tap the <strong>&ldquo;Nivrok updated&rdquo;</strong> banner when done to jump right back into your tabs.
               </li>
             </ol>
           </div>

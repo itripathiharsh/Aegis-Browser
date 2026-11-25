@@ -3,7 +3,7 @@ import { formatDisplayUrl, resolveOmniboxInput } from './urlResolver';
 
 describe('urlResolver', () => {
   it('routes direct domains, full URLs, media links, and search queries cleanly', () => {
-    expect(resolveOmniboxInput('')).toBe('aegis://home');
+    expect(resolveOmniboxInput('')).toBe('nivrok://home');
     expect(resolveOmniboxInput('wikipedia.org')).toBe('https://wikipedia.org');
     expect(resolveOmniboxInput('http://localhost:8080')).toBe('http://localhost:8080');
     expect(resolveOmniboxInput('privacy browsers for android', 'brave')).toBe(
@@ -15,8 +15,8 @@ describe('urlResolver', () => {
   });
 
   it('extracts security and internal flags cleanly', () => {
-    expect(formatDisplayUrl('aegis://home')).toEqual({
-      hostLabel: 'Aegis Start',
+    expect(formatDisplayUrl('nivrok://home')).toEqual({
+      hostLabel: 'Nivrok Start',
       isSecure: true,
       isInternal: true,
     });

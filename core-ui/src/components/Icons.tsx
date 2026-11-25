@@ -5,7 +5,7 @@ interface IconProps {
   className?: string;
 }
 
-export const AegisCrest: React.FC<IconProps> = ({ size = 44, className }) => (
+export const NivrokCrest: React.FC<IconProps> = ({ size = 44, className }) => (
   <svg
     width={size}
     height={size}
@@ -25,7 +25,7 @@ export const AegisCrest: React.FC<IconProps> = ({ size = 44, className }) => (
       fill="var(--accent)"
     />
     <path
-      d="M32 20L40.5 42H35.5L33.8 37.2H30.2L28.5 42H23.5L32 20ZM31.1 33.2H32.9L32 27.3L31.1 33.2Z"
+      d="M24 42V22H28.4L35.6 34.4V22H40V42H35.6L28.4 29.6V42Z"
       fill="var(--accent-ink)"
     />
   </svg>

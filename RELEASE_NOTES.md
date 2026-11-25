@@ -1,6 +1,4 @@
-### What's New
-- Clean, formatted release notes inside the update dialog so you can clearly read every improvement before updating.
-- Guided update install steps with highlighted APK filename and an instant "Aegis Browser updated — Tap to open" banner right after installation finishes.
-- Built-in Crash Recovery & Diagnostics panel in Settings so you can view, copy, or email issue logs directly to harsh.tripathi.cs@gmail.com or open a pre-filled GitHub issue.
-- On-demand GitHub Release download counters inside Settings -> Diagnostics & Release Stats.
-- Resilient WebView renderer recovery so heavy pages recover safely without force-closing the browser.
+### What's New in Nivrok v1.0.8
+- Rebranded to **Nivrok** across Android APK, LG webOS `.ipk`, app launcher icon (`N` shield emblem), internal `nivrok://home` scheme, and UI chrome for clean standalone identity.
+- Package ID is now `io.github.itripathiharsh.nivrok` (`Nivrok-v1.0.8.apk`). Install cleanly alongside the previous build, and you can uninstall the older Aegis icon afterward — future Nivrok updates upgrade in place automatically.
+- Includes clean formatted release notes, 1-tap post-update reopen banner, Crash Recovery & Diagnostics report builder, and GitHub release download counts in Settings.

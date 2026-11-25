@@ -27,7 +27,7 @@ export function stripInlineMarkdown(text: string): string {
 function isBoilerplateLine(cleaned: string): boolean {
   const lower = cleaned.toLowerCase();
   if (!lower) return true;
-  if (/^aegis browser\s+v?\d+\.\d+/.test(lower)) return true;
+  if (/^(nivrok|aegis)(\s+browser)?\s+v?\d+\.\d+/.test(lower)) return true;
   if (/^install:\s*download\b/i.test(lower) && lower.includes('.apk')) return true;
   if (/^full changelog:/i.test(lower)) return true;
   return false;

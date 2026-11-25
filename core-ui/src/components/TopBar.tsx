@@ -21,7 +21,7 @@ import {
 } from './BrowserIcons';
 import { FindBar } from './FindBar';
 import {
-  AegisCrest,
+  NivrokCrest,
   BackIcon,
   BookmarkIcon,
   DesktopIcon,
@@ -141,7 +141,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   useEffect(() => {
     if (!isEditing) {
-      setDraft(activeTab.url === 'aegis://home' ? '' : activeTab.url);
+      setDraft(activeTab.url === 'nivrok://home' || activeTab.url === 'aegis://home' ? '' : activeTab.url);
     }
   }, [activeTab.url, isEditing]);
 
@@ -206,7 +206,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             <button
               type="button"
               className="home-topbar-brand"
-              aria-label="Open Aegis Shields"
+              aria-label="Open Nivrok Shields"
               onClick={() => {
                 onToggleMenu(false);
                 onOpenDrawer('shields');
@@ -219,8 +219,8 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </span>
               ) : (
                 <>
-                  <AegisCrest size={24} />
-                  <span className="home-topbar-name">Aegis Browser</span>
+                  <NivrokCrest size={24} />
+                  <span className="home-topbar-name">Nivrok</span>
                 </>
               )}
             </button>
@@ -266,11 +266,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                 {activeTab.incognito ? <IncognitoIcon size={14} /> : <LockIcon size={14} />}
               </span>
 
-              <label htmlFor="aegis-omnibox" className="sr-only">
+              <label htmlFor="nivrok-omnibox" className="sr-only">
                 Search or enter website URL
               </label>
               <input
-                id="aegis-omnibox"
+                id="nivrok-omnibox"
                 ref={omniboxInputRef}
                 className="omnibox-input"
                 type="text"
@@ -346,7 +346,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           className="shields-btn"
           data-active={shieldsEnabledForSite ? 'true' : 'false'}
           data-pulse={pulse ? 'true' : 'false'}
-          aria-label={`Aegis Shields (${totalBlocked} blocked)`}
+          aria-label={`Nivrok Shields (${totalBlocked} blocked)`}
           aria-expanded={activeDrawer === 'shields'}
           onClick={() => {
             onToggleMenu(false);
@@ -448,7 +448,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       {hasUnacknowledgedCrash && (
         <div className="perm-banner" role="status" aria-label="Previous crash recovery">
           <div className="perm-banner-text">
-            Aegis recovered from an unexpected error on the previous run.
+            Nivrok recovered from an unexpected error on the previous run.
           </div>
           <div className="perm-banner-actions">
             <button

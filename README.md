@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Aegis_Browser-🛡️-ff6b2b?style=for-the-badge&labelColor=090c10" alt="Aegis Browser" />
+  <img src="https://img.shields.io/badge/Nivrok-🛡️-ff6b2b?style=for-the-badge&labelColor=090c10" alt="Nivrok" />
 </p>
 
-<h1 align="center">Aegis Browser</h1>
+<h1 align="center">Nivrok</h1>
 
 <p align="center">
   <strong>Zero-cost · Privacy-first · Ultra-fast · No ads, ever.</strong>
@@ -26,13 +26,13 @@
 
 > **[⬇️ Download Latest APK](https://github.com/itripathiharsh/Aegis-Browser/releases/latest)**
 >
-> Go to **Releases → Assets → `AegisBrowser-vX.X.X.apk`** and install on your Android device (Package ID: `io.github.itripathiharsh.aegis`).
+> Go to **Releases → Assets → `Nivrok-vX.X.X.apk`** and install on your Android device (Package ID: `io.github.itripathiharsh.nivrok`).
 >
-> **Minimal Permissions:** Requires only `INTERNET` and `ACCESS_NETWORK_STATE` (updates download cleanly to Android `Downloads` via `DownloadManager` with no package-dropper permissions). On a fresh self-signed GitHub APK, if Google Play Protect shows *"Unrecognized developer"*, tap **More details → Install anyway**.
+> **Minimal Permissions:** Requires only `INTERNET` and `ACCESS_NETWORK_STATE` (plus optional notification prompt during updates; downloads cleanly to Android `Downloads` via `DownloadManager` with no package-dropper permissions). On a fresh self-signed GitHub APK, if Google Play Protect shows *"Unrecognized developer"*, tap **More details → Install anyway**.
 
 ---
 
-## 🔥 What is Aegis Browser?
+## 🔥 What is Nivrok?
 
 A **zero-cost, ultra-fast, privacy-first** web browser inspired by Brave — engineered to block **ALL** types of ads (video ads, popups, banners, trackers, redirects) while delivering smooth web surfing and hardware-accelerated video playback.
 
@@ -62,7 +62,7 @@ A **zero-cost, ultra-fast, privacy-first** web browser inspired by Brave — eng
 ## 🏗️ Architecture
 
 ```
-Aegis-Browser/
+Nivrok/
 ├── core-ui/                  # Shared React + TypeScript + Vite browser UI & filter engine
 │   ├── src/
 │   │   ├── adblock/          # ABP/Hosts parser + O(1) domain matcher + GitHub mirror updater
@@ -74,11 +74,12 @@ Aegis-Browser/
 │   │   └── styles/           # Design tokens (tokens.css) + responsive TV/Mobile CSS (app.css)
 │
 ├── android-shell/            # Native Kotlin Android WebView wrapper & network interceptor
-│   └── app/src/main/java/com/aegis/browser/
+│   └── app/src/main/java/com/nivrok/browser/
 │       ├── adblock/          # DomainTrie + filter parser + background filter list updater
 │       ├── browser/          # WebViewClient (ad blocking), WebChromeClient (popups + fullscreen)
 │       ├── bridge/           # @JavascriptInterface bridge (isolated to local UI WebView)
-│       ├── updater/          # In-app APK updater (GitHub Releases API + FileProvider installer)
+│       ├── diagnostics/      # Privacy-safe local crash & non-fatal failure log builder
+│       ├── updater/          # In-app APK updater (GitHub Releases + DownloadManager)
 │       └── ui/               # MainActivity (dual WebView, WindowInsets, D-Pad routing)
 │
 ├── shared-filters/           # Bundled EasyList, EasyPrivacy, uBlock & cosmetic filter lists

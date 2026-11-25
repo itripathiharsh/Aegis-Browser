@@ -77,7 +77,7 @@ export function buildOmniboxSuggestions(
 
   // 2. Saved bookmarks
   for (const bm of bookmarks) {
-    if (bm.url.startsWith('aegis://')) continue;
+    if (bm.url.startsWith('nivrok://') || bm.url.startsWith('aegis://')) continue;
     const titleLower = bm.title.toLowerCase();
     const urlLower = bm.url.toLowerCase();
     if (!titleLower.includes(q) && !urlLower.includes(q)) continue;

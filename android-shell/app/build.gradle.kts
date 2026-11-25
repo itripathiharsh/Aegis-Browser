@@ -6,39 +6,45 @@ plugins {
 }
 
 // Single configurable GitHub repository slug ("<OWNER>/<REPO>") for in-app GitHub Releases updates.
-// Can also be overridden in CI via -PaegisGithubRepo=owner/repo or AEGIS_GITHUB_REPO.
+// Can also be overridden in CI via -PnivrokGithubRepo=owner/repo or NIVROK_GITHUB_REPO.
 val DEFAULT_GITHUB_REPO = "itripathiharsh/Aegis-Browser"
 
-val aegisGithubRepo = providers.gradleProperty("aegisGithubRepo")
+val nivrokGithubRepo = providers.gradleProperty("nivrokGithubRepo")
+    .orElse(providers.gradleProperty("aegisGithubRepo"))
+    .orElse(providers.environmentVariable("NIVROK_GITHUB_REPO"))
     .orElse(providers.environmentVariable("AEGIS_GITHUB_REPO"))
     .orElse(DEFAULT_GITHUB_REPO)
     .get()
 
-val aegisVersionName = providers.gradleProperty("aegisVersionName")
+val nivrokVersionName = providers.gradleProperty("nivrokVersionName")
+    .orElse(providers.gradleProperty("aegisVersionName"))
+    .orElse(providers.environmentVariable("NIVROK_VERSION_NAME"))
     .orElse(providers.environmentVariable("AEGIS_VERSION_NAME"))
-    .orElse("1.0.7")
+    .orElse("1.0.8")
     .get()
 
-val aegisVersionCode = providers.gradleProperty("aegisVersionCode")
+val nivrokVersionCode = providers.gradleProperty("nivrokVersionCode")
+    .orElse(providers.gradleProperty("aegisVersionCode"))
+    .orElse(providers.environmentVariable("NIVROK_VERSION_CODE"))
     .orElse(providers.environmentVariable("AEGIS_VERSION_CODE"))
-    .map { it.toIntOrNull() ?: 1000007 }
-    .orElse(1000007)
+    .map { it.toIntOrNull() ?: 1000008 }
+    .orElse(1000008)
     .get()
 
 android {
-    namespace = "com.aegis.browser"
+    namespace = "com.nivrok.browser"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.itripathiharsh.aegis"
+        applicationId = "io.github.itripathiharsh.nivrok"
         minSdk = 24
         targetSdk = 35
-        versionCode = aegisVersionCode
-        versionName = aegisVersionName
+        versionCode = nivrokVersionCode
+        versionName = nivrokVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val escapedRepo = aegisGithubRepo.replace("\"", "\\\"")
+        val escapedRepo = nivrokGithubRepo.replace("\"", "\\\"")
         buildConfigField("String", "GITHUB_REPO", "\"$escapedRepo\"")
     }
 

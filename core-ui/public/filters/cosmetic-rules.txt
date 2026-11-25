@@ -1,4 +1,4 @@
-! Title: Aegis Cosmetic Ad & Overlay Hiding Rules
+! Title: Nivrok Cosmetic Ad & Overlay Hiding Rules
 ##ins.adsbygoogle
 ##.adsbygoogle
 ##[id^="div-gpt-ad"]

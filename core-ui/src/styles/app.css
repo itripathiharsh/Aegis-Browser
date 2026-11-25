@@ -1,4 +1,4 @@
-.aegis-shell {
+.nivrok-shell {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -7,7 +7,7 @@
   color: var(--text-primary);
 }
 
-.aegis-shell[data-bar-only="true"] {
+.nivrok-shell[data-bar-only="true"] {
   min-height: auto;
 }
 
@@ -1319,7 +1319,7 @@
 }
 
 /* === Toast === */
-.aegis-toast {
+.nivrok-toast {
   position: fixed;
   bottom: 20px;
   left: 50%;

@@ -27,7 +27,7 @@ export function resolveOmniboxInput(
   engine: SearchEngineId = 'duckduckgo'
 ): string {
   const trimmed = rawInput.trim();
-  if (!trimmed || trimmed.startsWith('aegis://')) return 'aegis://home';
+  if (!trimmed || trimmed.startsWith('nivrok://') || trimmed.startsWith('aegis://')) return 'nivrok://home';
 
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
@@ -52,9 +52,9 @@ export function formatDisplayUrl(url: string): {
   isSecure: boolean;
   isInternal: boolean;
 } {
-  if (url.startsWith('aegis://')) {
+  if (url.startsWith('nivrok://') || url.startsWith('aegis://')) {
     return {
-      hostLabel: 'Aegis Start',
+      hostLabel: 'Nivrok Start',
       isSecure: true,
       isInternal: true,
     };

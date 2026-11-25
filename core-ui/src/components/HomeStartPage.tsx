@@ -16,7 +16,7 @@ import {
   SettingsIcon,
   TrashIcon,
 } from './BrowserIcons';
-import { AegisCrest, PlusIcon, ShieldIcon, StopIcon } from './Icons';
+import { NivrokCrest, PlusIcon, ShieldIcon, StopIcon } from './Icons';
 import { SuggestionDropdown } from './SuggestionDropdown';
 
 interface HomeStartPageProps {
@@ -181,19 +181,19 @@ export const HomeStartPage: React.FC<HomeStartPageProps> = ({
             </div>
             <h1 className="incognito-hero-title">You&apos;ve gone Incognito</h1>
             <p className="incognito-hero-copy">
-              Aegis will not save pages you visit to History or Recommendations, and clears cookies &amp; temporary data when this tab closes.
+              Nivrok will not save pages you visit to History or Recommendations, and clears cookies &amp; temporary data when this tab closes.
             </p>
           </section>
         ) : (
-          <section className="home-hero-band" aria-labelledby="aegis-home-title">
+          <section className="home-hero-band" aria-labelledby="nivrok-home-title">
             <div className="home-brand-header">
               <div className="home-brand-row">
-                <AegisCrest size={40} />
+                <NivrokCrest size={40} />
                 <div className="home-brand-copy">
-                  <h1 id="aegis-home-title" className="home-title">
-                    Aegis
+                  <h1 id="nivrok-home-title" className="home-title">
+                    Nivrok
                   </h1>
-                  <span className="home-subtitle">Private Shielded Browser</span>
+                  <span className="home-subtitle">Private Zero-Ad Browser</span>
                 </div>
               </div>
               <button

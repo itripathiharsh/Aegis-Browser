@@ -112,7 +112,7 @@ export const TabsDrawer: React.FC<TabsDrawerProps> = ({
           </button>
         )}
 
-        {activeTab && !activeTab.url.startsWith('aegis://') && (
+        {activeTab && !activeTab.url.startsWith('nivrok://') && !activeTab.url.startsWith('aegis://') && (
           <div className="panel-card">
             <div className="toggle-row">
               <div>

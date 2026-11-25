@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag override (e.g., v1.0.6). Leave blank to use the pushed tag or default.'
+        description: 'Version tag override (e.g., v1.0.8). Leave blank to use the pushed tag or default.'
         required: false
         type: string
 
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build-android-apk:
-    name: Build core-ui + Aegis Android APK
+    name: Build core-ui + Nivrok Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -30,7 +30,7 @@ jobs:
           RAW="${{ github.event.inputs.version || github.ref_name }}"
           VERSION="${RAW#v}"
           if [[ -z "$VERSION" || "$VERSION" == "${{ github.ref_name }}" && "$VERSION" != v* ]]; then
-            VERSION="1.0.6"
+            VERSION="1.0.8"
           fi
           CODE=$(echo "$VERSION" | awk -F. '{printf "%d%03d%03d", $1, $2, $3}')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -48,8 +48,8 @@ jobs:
       - name: Install, test, and build core-ui
         working-directory: core-ui
         env:
-          VITE_AEGIS_GITHUB_REPO: ${{ github.repository }}
-          VITE_AEGIS_APP_VERSION: ${{ steps.version.outputs.version }}
+          VITE_NIVROK_GITHUB_REPO: ${{ github.repository }}
+          VITE_NIVROK_APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           npm ci
           npm test
@@ -82,9 +82,9 @@ jobs:
           GRADLE_CMD="gradle"
           [ -x ./gradlew ] && GRADLE_CMD="./gradlew"
           $GRADLE_CMD testDebugUnitTest --no-daemon \
-            -PaegisVersionName="${{ steps.version.outputs.version }}" \
-            -PaegisVersionCode="${{ steps.version.outputs.code }}" \
-            -PaegisGithubRepo="${{ github.repository }}"
+            -PnivrokVersionName="${{ steps.version.outputs.version }}" \
+            -PnivrokVersionCode="${{ steps.version.outputs.code }}" \
+            -PnivrokGithubRepo="${{ github.repository }}"
 
       - name: Build Debug & Release APKs
         working-directory: android-shell
@@ -92,29 +92,29 @@ jobs:
           GRADLE_CMD="gradle"
           [ -x ./gradlew ] && GRADLE_CMD="./gradlew"
           $GRADLE_CMD assembleDebug assembleRelease --no-daemon \
-            -PaegisVersionName="${{ steps.version.outputs.version }}" \
-            -PaegisVersionCode="${{ steps.version.outputs.code }}" \
-            -PaegisGithubRepo="${{ github.repository }}"
+            -PnivrokVersionName="${{ steps.version.outputs.version }}" \
+            -PnivrokVersionCode="${{ steps.version.outputs.code }}" \
+            -PnivrokGithubRepo="${{ github.repository }}"
 
       - name: Rename release APK for distribution
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           APK=$(find android-shell/app/build/outputs/apk/release -name '*.apk' | head -1)
           if [ -n "$APK" ]; then
-            cp "$APK" "android-shell/app/build/outputs/apk/release/AegisBrowser-v${VERSION}.apk"
+            cp "$APK" "android-shell/app/build/outputs/apk/release/Nivrok-v${VERSION}.apk"
           fi
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-browser-debug-apk
+          name: nivrok-debug-apk
           path: android-shell/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aegis-browser-release-apk
+          name: nivrok-release-apk
           path: android-shell/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -123,9 +123,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "Aegis Browser ${{ steps.version.outputs.tag }}"
+          name: "Nivrok ${{ steps.version.outputs.tag }}"
           body_path: RELEASE_NOTES.md
           draft: false
           prerelease: false
           files: |
-            android-shell/app/build/outputs/apk/release/AegisBrowser-v${{ steps.version.outputs.version }}.apk
+            android-shell/app/build/outputs/apk/release/Nivrok-v${{ steps.version.outputs.version }}.apk

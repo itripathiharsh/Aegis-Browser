@@ -2,7 +2,7 @@ import type { BrowserState, FilterSyncResult, ShieldsConfig } from '../adblock/t
 
 /**
  * Phase 2 Adapter Interface for LG webOS (WebOS-Chromium / Luna Service IPC).
- * When packaged into an LG webOS .ipk, the native webOS shell exposes window.AegisWebOS
+ * When packaged into an LG webOS .ipk, the native webOS shell exposes window.NivrokWebOS
  * (or webOS.service.request) implementing this contract so core-ui requires zero rewrite.
  */
 export interface WebOSNativeHost {
@@ -29,7 +29,7 @@ export interface WebOSNativeHost {
 
 declare global {
   interface Window {
-    AegisWebOS?: WebOSNativeHost;
+    NivrokWebOS?: WebOSNativeHost;
     webOS?: {
       platform?: { tv?: boolean };
       service?: {
@@ -43,7 +43,7 @@ declare global {
 }
 
 export function isWebOSRuntime(): boolean {
-  return Boolean(window.AegisWebOS || window.webOS);
+  return Boolean(window.NivrokWebOS || window.webOS);
 }
 
 export function registerWebOSBackHandler(onBack: () => void): () => void {

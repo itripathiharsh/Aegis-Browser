@@ -1,6 +1,6 @@
-! Title: Aegis EasyList AdServers (Preloaded Offline Bundle)
+! Title: Nivrok EasyList AdServers (Preloaded Offline Bundle)
 ! Sources: EasyList AdServers + Core Ad Rules
-! Aegis Core Ad Path & Exception Rules
+! Nivrok Core Ad Path & Exception Rules
 /pagead/js/adsbygoogle.js$script
 /pagead/show_ads.js$script
 /pagead/managed/js/adsense/

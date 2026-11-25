@@ -1,6 +1,6 @@
 # Phase 2: LG webOS `.ipk` Packaging Target
 
-This directory prepares Aegis Browser for LG webOS (`WebOS-Chromium` + `@webosose/ares-cli`) without modifying `core-ui/`.
+This directory prepares Nivrok for LG webOS (`WebOS-Chromium` + `@webosose/ares-cli`) without modifying `core-ui/`.
 
 ## Integration Contract
 
@@ -12,4 +12,4 @@ This directory prepares Aegis Browser for LG webOS (`WebOS-Chromium` + `@webosos
 
 1. Build `core-ui`: `npm run build` (with `core-ui/public/filters` synced from `shared-filters/`).
 2. Copy `core-ui/dist/*` alongside `webos-shell/appinfo.json` and launcher icons into `webos-shell/dist/`.
-3. Package using open-source webOS CLI (`ares-package webos-shell/dist`) inside GitHub Actions `ubuntu-latest` to output `io.github.itripathiharsh.aegis_1.0.6_all.ipk`.
+3. Package using open-source webOS CLI (`ares-package webos-shell/dist`) inside GitHub Actions `ubuntu-latest` to output `io.github.itripathiharsh.nivrok_1.0.8_all.ipk`.
