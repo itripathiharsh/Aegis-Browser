@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -98,8 +100,12 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.all { test ->
             val envDir = System.getenv("ROBOLECTRIC_DEPS_DIR")?.takeIf { it.isNotBlank() }
-            val localFDir = file("F:/gradle-home/robolectric-deps").takeIf { it.exists() }?.absolutePath
-            val depsDir = envDir ?: localFDir
+            val winDeps = if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
+                File("F:\\gradle-home\\robolectric-deps").takeIf { it.exists() }?.absolutePath
+            } else {
+                null
+            }
+            val depsDir = envDir ?: winDeps
             if (depsDir != null) {
                 test.systemProperty("robolectric.dependency.dir", depsDir)
             }
