@@ -128,6 +128,44 @@ export const App: React.FC = () => {
     };
   }, [bridge]);
 
+  useEffect(() => {
+    const prevVer = state.diagnostics?.updatedFromVersion;
+    if (prevVer) {
+      showToast(`Updated cleanly to v${state.appUpdate.installedVersion}`);
+      bridge.acknowledgeUpdateToast();
+    }
+  }, [
+    bridge,
+    showToast,
+    state.appUpdate.installedVersion,
+    state.diagnostics?.updatedFromVersion,
+  ]);
+
+  useEffect(() => {
+    const reported = new Set<string>();
+    const onError = (ev: ErrorEvent) => {
+      const msg = ev.message || 'Unhandled UI error';
+      if (reported.has(msg)) return;
+      reported.add(msg);
+      bridge.reportUiError('CoreUI', msg);
+    };
+    const onRejection = (ev: PromiseRejectionEvent) => {
+      const msg =
+        ev.reason instanceof Error
+          ? ev.reason.message
+          : String(ev.reason ?? 'Unhandled rejection');
+      if (reported.has(msg)) return;
+      reported.add(msg);
+      bridge.reportUiError('CoreUI-Promise', msg);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, [bridge]);
+
   const activeTab =
     state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
 
@@ -162,6 +200,7 @@ export const App: React.FC = () => {
     state.tabs.length,
     findBarOpen,
     state.pendingPermission,
+    state.diagnostics?.hasUnacknowledgedCrash,
   ]);
 
   useEffect(() => {
@@ -339,6 +378,12 @@ export const App: React.FC = () => {
         onFindQueryChange={(q) => bridge.findInPage(activeTab.id, q)}
         onFindNext={(forward) => bridge.findNextMatch(activeTab.id, forward)}
         onRespondPermission={(id, allow) => bridge.respondPermissionPrompt(id, allow)}
+        hasUnacknowledgedCrash={Boolean(state.diagnostics?.hasUnacknowledgedCrash)}
+        onInspectCrashReport={() => {
+          bridge.dismissCrashAlert();
+          setActiveDrawer('settings');
+        }}
+        onDismissCrashAlert={() => bridge.dismissCrashAlert()}
         onOpenDrawer={(d) => setActiveDrawer((cur) => (cur === d ? null : d))}
       />
 
@@ -475,7 +520,9 @@ export const App: React.FC = () => {
         <SettingsDrawer
           settings={settings}
           appVersion={state.appUpdate.installedVersion}
+          githubRepo={state.appUpdate.githubRepo}
           checkingUpdate={state.appUpdate.status === 'checking'}
+          diagnostics={state.diagnostics}
           onUpdateSettings={handleUpdateSettings}
           onClearHistory={() => {
             bridge.clearHistory();
@@ -484,6 +531,14 @@ export const App: React.FC = () => {
           onClearCacheAndCookies={() => bridge.clearCacheAndCookies()}
           onCheckForUpdates={() => bridge.checkForUpdates(true)}
           onOpenShields={() => setActiveDrawer('shields')}
+          onCopyDiagnostics={() => {
+            if (state.diagnostics?.reportText) {
+              bridge.copyText(state.diagnostics.reportText);
+            }
+          }}
+          onEmailDiagnostics={() => bridge.sendCrashEmail()}
+          onOpenIssue={() => bridge.openCrashIssueTab()}
+          onClearDiagnostics={() => bridge.clearDiagnostics()}
           onClose={() => setActiveDrawer(null)}
         />
       )}

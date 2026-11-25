@@ -3,7 +3,9 @@ package com.aegis.browser.browser
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.text.TextUtils
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -29,7 +31,8 @@ class BrowserWebViewClient(
     private val onExternalSchemeRequested: (Uri) -> Boolean,
     private val onAutoClosePopupTab: (tabId: String, blockedUrl: String, rule: String) -> Unit,
     private val onVisitRecorded: (tabId: String, url: String, title: String?, host: String?) -> Unit,
-    private val onStateChanged: (tabId: String, url: String, loading: Boolean, canBack: Boolean, canForward: Boolean) -> Unit
+    private val onStateChanged: (tabId: String, url: String, loading: Boolean, canBack: Boolean, canForward: Boolean) -> Unit,
+    private val onRenderProcessGoneCb: (tabId: String, didCrash: Boolean) -> Unit = { _, _ -> }
 ) : WebViewClient() {
 
     private val currentPageUrl = AtomicReference<String?>(null)
@@ -38,6 +41,19 @@ class BrowserWebViewClient(
     fun updateTrackedUrl(url: String?) {
         currentPageUrl.set(url)
         currentPageHost.set(AdBlockEngine.extractHost(url))
+    }
+
+    override fun onRenderProcessGone(
+        view: WebView?,
+        detail: RenderProcessGoneDetail?
+    ): Boolean {
+        val crashed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            detail?.didCrash() ?: true
+        } else {
+            true
+        }
+        onRenderProcessGoneCb(tabId, crashed)
+        return true
     }
 
     override fun shouldInterceptRequest(

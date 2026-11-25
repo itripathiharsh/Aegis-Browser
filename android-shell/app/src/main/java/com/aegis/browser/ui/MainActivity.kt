@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,6 +41,7 @@ import com.aegis.browser.bridge.PendingPermissionUi
 import com.aegis.browser.browser.BrowserDataStore
 import com.aegis.browser.browser.DownloadsRepository
 import com.aegis.browser.browser.TabManager
+import com.aegis.browser.diagnostics.CrashReporter
 import com.aegis.browser.updater.AppUpdater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private var lastBarHeightPx: Int = 0
     private var uiReady: Boolean = false
     private var pushScheduled: Boolean = false
+    private var askedPostNotifForUpdate: Boolean = false
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -111,6 +114,14 @@ class MainActivity : AppCompatActivity() {
         finishPendingSitePermission(allow = allGranted)
     }
 
+    private val updateNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        if (::appUpdater.isInitialized) {
+            appUpdater.startDownloadAndInstall()
+        }
+    }
+
     private val pushRunnable = Runnable {
         pushScheduled = false
         pushStateToUiImmediate()
@@ -119,6 +130,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashReporter.install(applicationContext)
+        CrashReporter.checkAndRecordVersionBoot(applicationContext)
 
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
@@ -312,6 +325,9 @@ class MainActivity : AppCompatActivity() {
             },
             onRespondSitePermission = { id, allow ->
                 handlePermissionPromptDecision(id, allow)
+            },
+            onStartUpdateRequested = {
+                handleStartUpdateRequested()
             }
         )
 
@@ -710,6 +726,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun dpToPx(dp: Int): Int =
         (dp * resources.displayMetrics.density).toInt()
+
+    private fun handleStartUpdateRequested() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !askedPostNotifForUpdate &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askedPostNotifForUpdate = true
+            updateNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        appUpdater.startDownloadAndInstall()
+    }
 
     override fun onPause() {
         super.onPause()

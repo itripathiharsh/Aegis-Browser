@@ -25,6 +25,7 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.aegis.browser.adblock.AdBlockEngine
 import com.aegis.browser.adblock.ShieldsTelemetry
+import com.aegis.browser.diagnostics.CrashReporter
 import java.net.URLEncoder
 import java.util.UUID
 import kotlin.math.abs
@@ -877,6 +878,28 @@ class TabManager(
                 target.canGoForward = canForward
                 if (!loading) persistTabsSnapshot()
                 onTabsUpdated()
+            },
+            onRenderProcessGoneCb = { id, didCrash ->
+                val target = synchronized(tabsLock) { tabs.find { it.id == id } } ?: return@BrowserWebViewClient
+                val msg = if (didCrash) {
+                    "WebView renderer crashed; automatically restoring tab."
+                } else {
+                    "WebView renderer reclaimed by Android memory manager; restoring tab."
+                }
+                CrashReporter.recordNonFatal(context, "WebViewRenderer", msg)
+                wv.post {
+                    target.wrapperView?.let { container.removeView(it) }
+                    target.webView?.destroy()
+                    target.webView = null
+                    target.wrapperView = null
+                    target.webViewClient = null
+                    if (!target.isInternalPage && target.url.startsWith("http")) {
+                        loadUrlInTab(target, target.url)
+                    } else {
+                        target.isLoading = false
+                        onTabsUpdated()
+                    }
+                }
             }
         )
         tab.webViewClient = client

@@ -176,6 +176,23 @@ export interface DownloadsSummary {
   totalCount: number;
 }
 
+export interface DiagnosticNonFatalEvent {
+  source: string;
+  message: string;
+  timestampIso: string;
+}
+
+export interface DiagnosticsState {
+  hasUnacknowledgedCrash: boolean;
+  lastCrashSummary: string | null;
+  lastCrashIso: string | null;
+  lastCrashVersion: string | null;
+  updatedFromVersion: string | null;
+  nonFatalCount: number;
+  recentErrors: DiagnosticNonFatalEvent[];
+  reportText: string;
+}
+
 export interface BrowserState {
   platform: 'android' | 'webos' | 'web';
   searchEngine?: SearchEngineId;
@@ -186,6 +203,7 @@ export interface BrowserState {
   canReopenClosedTab?: boolean;
   recommendations?: RecommendedSite[];
   downloadsSummary?: DownloadsSummary;
+  diagnostics?: DiagnosticsState;
   pendingContextMenu?: PendingContextMenu | null;
   findState?: FindState | null;
   pendingPermission?: PendingPermissionPrompt | null;

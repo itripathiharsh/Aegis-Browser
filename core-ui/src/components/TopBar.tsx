@@ -83,6 +83,9 @@ interface TopBarProps {
   onFindQueryChange: (q: string) => void;
   onFindNext: (forward: boolean) => void;
   onRespondPermission: (id: string, allow: boolean) => void;
+  hasUnacknowledgedCrash?: boolean;
+  onInspectCrashReport?: () => void;
+  onDismissCrashAlert?: () => void;
   onOpenDrawer: (drawer: DrawerKind) => void;
 }
 
@@ -125,6 +128,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onFindQueryChange,
   onFindNext,
   onRespondPermission,
+  hasUnacknowledgedCrash,
+  onInspectCrashReport,
+  onDismissCrashAlert,
   onOpenDrawer,
 }) => {
   const [draft, setDraft] = useState('');
@@ -437,6 +443,30 @@ export const TopBar: React.FC<TopBarProps> = ({
           onFindNext={onFindNext}
           onClose={onCloseFindBar}
         />
+      )}
+
+      {hasUnacknowledgedCrash && (
+        <div className="perm-banner" role="status" aria-label="Previous crash recovery">
+          <div className="perm-banner-text">
+            Aegis recovered from an unexpected error on the previous run.
+          </div>
+          <div className="perm-banner-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={onDismissCrashAlert}
+            >
+              Dismiss
+            </button>
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={onInspectCrashReport}
+            >
+              Report
+            </button>
+          </div>
+        </div>
       )}
 
       {pendingPermission && (

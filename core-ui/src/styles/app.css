@@ -1958,17 +1958,101 @@
 }
 
 .changelog-box {
-  max-height: 150px;
+  max-height: 175px;
   overflow-y: auto;
   padding: var(--space-3);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   background: var(--bg-input);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.changelog-heading {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.changelog-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--text-secondary);
+}
+
+.changelog-list li::marker {
+  color: var(--accent);
+}
+
+.update-file-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  border: 1px solid var(--accent-border);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+  margin-bottom: 0.5rem;
+}
+
+.install-steps-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.diag-trace-box {
+  margin-top: 0.5rem;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.release-stats-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.release-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
 }
 
 .progress-track {

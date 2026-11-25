@@ -1,16 +1,34 @@
 import React, { useState } from 'react';
-import type { BrowserSettings, SearchEngineId, ThemeMode } from '../adblock/types';
+import type {
+  BrowserSettings,
+  DiagnosticsState,
+  SearchEngineId,
+  ThemeMode,
+} from '../adblock/types';
 import { SEARCH_ENGINES } from '../utils/urlResolver';
+
+interface ReleaseDownloadStat {
+  tagName: string;
+  apkName: string;
+  downloads: number;
+  publishedDate: string;
+}
 
 interface SettingsDrawerProps {
   settings: BrowserSettings;
   appVersion: string;
+  githubRepo: string;
   checkingUpdate: boolean;
+  diagnostics?: DiagnosticsState;
   onUpdateSettings: (next: BrowserSettings) => void;
   onClearHistory: () => void;
   onClearCacheAndCookies: () => void;
   onCheckForUpdates: () => void;
   onOpenShields: () => void;
+  onCopyDiagnostics: () => void;
+  onEmailDiagnostics: () => void;
+  onOpenIssue: () => void;
+  onClearDiagnostics: () => void;
   onClose: () => void;
 }
 
@@ -19,15 +37,62 @@ const ENGINE_ORDER: SearchEngineId[] = ['duckduckgo', 'brave', 'startpage', 'goo
 export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   settings,
   appVersion,
+  githubRepo,
   checkingUpdate,
+  diagnostics,
   onUpdateSettings,
   onClearHistory,
   onClearCacheAndCookies,
   onCheckForUpdates,
   onOpenShields,
+  onCopyDiagnostics,
+  onEmailDiagnostics,
+  onOpenIssue,
+  onClearDiagnostics,
   onClose,
 }) => {
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [diagExpanded, setDiagExpanded] = useState(false);
+  const [diagFeedback, setDiagFeedback] = useState<string | null>(null);
+  const [releaseStats, setReleaseStats] = useState<ReleaseDownloadStat[] | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  const loadReleaseStats = async () => {
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${githubRepo}/releases?per_page=10`,
+        { headers: { Accept: 'application/vnd.github+json' } }
+      );
+      if (!res.ok) throw new Error(`GitHub API HTTP ${res.status}`);
+      const items = (await res.json()) as Array<{
+        tag_name?: string;
+        published_at?: string;
+        assets?: Array<{ name?: string; download_count?: number }>;
+      }>;
+      const mapped: ReleaseDownloadStat[] = items
+        .map((rel) => {
+          const apks = (rel.assets ?? []).filter((a) =>
+            (a.name ?? '').toLowerCase().endsWith('.apk')
+          );
+          const count = apks.reduce((sum, a) => sum + (a.download_count ?? 0), 0);
+          return {
+            tagName: rel.tag_name ?? 'release',
+            apkName: apks[0]?.name ?? 'APK',
+            downloads: count,
+            publishedDate: (rel.published_at ?? '').slice(0, 10),
+          };
+        })
+        .filter((r) => Boolean(r.tagName));
+      setReleaseStats(mapped);
+    } catch (err) {
+      setStatsError((err as Error).message || 'Unable to load GitHub release counts');
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   const toggleKey = (
     key: keyof Pick<
@@ -302,6 +367,129 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
               {checkingUpdate ? 'Checking...' : 'Check Updates'}
             </button>
           </div>
+        </div>
+
+        <div className="panel-card">
+          <div className="section-head" style={{ marginBottom: '0.45rem' }}>
+            <span className="row-title">Diagnostics &amp; Crash Reports</span>
+            <span className="menu-badge">
+              {diagnostics?.lastCrashSummary
+                ? 'Crash Logged'
+                : `${diagnostics?.nonFatalCount ?? 0} Warnings`}
+            </span>
+          </div>
+          <div className="row-meta" style={{ marginBottom: '0.6rem' }}>
+            {diagnostics?.lastCrashSummary
+              ? `Last crash: ${diagnostics.lastCrashSummary}`
+              : 'No app crashes recorded. Non-fatal errors stay stored strictly on this device unless you choose to share them.'}
+          </div>
+          <div className="settings-action-grid">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                onCopyDiagnostics();
+                setDiagFeedback('Diagnostics report copied to clipboard.');
+              }}
+            >
+              Copy Report
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                onEmailDiagnostics();
+                setDiagFeedback('Opening email draft to harsh.tripathi.cs@gmail.com.');
+              }}
+            >
+              Email Support
+            </button>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => {
+                onOpenIssue();
+                onClose();
+              }}
+            >
+              GitHub Issue
+            </button>
+            <button
+              type="button"
+              className="danger-btn"
+              disabled={!diagnostics?.lastCrashSummary && (diagnostics?.nonFatalCount ?? 0) === 0}
+              onClick={() => {
+                onClearDiagnostics();
+                setDiagFeedback('Local diagnostic logs cleared.');
+              }}
+            >
+              Clear Logs
+            </button>
+          </div>
+          {diagnostics?.reportText && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => setDiagExpanded((v) => !v)}
+              >
+                {diagExpanded ? 'Hide Technical Log' : 'View Technical Log'}
+              </button>
+              {diagExpanded && (
+                <pre className="diag-trace-box">{diagnostics.reportText}</pre>
+              )}
+            </div>
+          )}
+          {diagFeedback && (
+            <div className="row-meta settings-feedback" role="status">
+              {diagFeedback}
+            </div>
+          )}
+        </div>
+
+        <div className="panel-card">
+          <div className="toggle-row" style={{ minHeight: 'auto' }}>
+            <div>
+              <div className="row-title">Release Download Counts</div>
+              <div className="row-meta">Public GitHub APK download totals</div>
+            </div>
+            <button
+              type="button"
+              className="secondary-btn"
+              disabled={statsLoading}
+              onClick={() => void loadReleaseStats()}
+            >
+              {statsLoading
+                ? 'Loading...'
+                : releaseStats
+                  ? 'Refresh'
+                  : 'Load Counts'}
+            </button>
+          </div>
+          {statsError && (
+            <div className="row-meta" style={{ marginTop: '0.45rem', color: 'var(--danger)' }}>
+              {statsError}
+            </div>
+          )}
+          {releaseStats && (
+            <div className="release-stats-list">
+              <div className="release-stat-row">
+                <strong>Total APK Downloads</strong>
+                <strong>
+                  {releaseStats.reduce((sum, item) => sum + item.downloads, 0)}
+                </strong>
+              </div>
+              {releaseStats.map((rel) => (
+                <div key={rel.tagName} className="release-stat-row">
+                  <span>
+                    <strong>{rel.tagName}</strong>
+                    {rel.publishedDate ? ` · ${rel.publishedDate}` : ''}
+                  </span>
+                  <span>{rel.downloads} downloads</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

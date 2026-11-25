@@ -6,6 +6,7 @@ import type {
   BookmarkItem,
   BrowserSettings,
   BrowserState,
+  DiagnosticsState,
   DownloadRecord,
   FilterSource,
   FilterSyncResult,
@@ -63,6 +64,12 @@ interface AndroidNativeHost extends WebOSNativeHost {
   cancelUpdateDownload(): void;
   dismissUpdateModal(): void;
   retryPendingInstall(): void;
+  dismissCrashAlert?(): void;
+  clearDiagnostics?(): void;
+  acknowledgeUpdateToast?(): void;
+  reportUiError?(source: string, message: string): void;
+  sendCrashEmail?(): void;
+  openCrashIssueTab?(): void;
 }
 
 declare global {
@@ -131,6 +138,12 @@ export interface BrowserBridge {
   cancelUpdateDownload(): void;
   dismissUpdateModal(): void;
   retryPendingInstall(): void;
+  dismissCrashAlert(): void;
+  clearDiagnostics(): void;
+  acknowledgeUpdateToast(): void;
+  reportUiError(source: string, message: string): void;
+  sendCrashEmail(): void;
+  openCrashIssueTab(): void;
 }
 
 const DEFAULT_SHIELDS: ShieldsConfig = {
@@ -157,6 +170,17 @@ const DEFAULT_UPDATE_STATE: AppUpdateState = {
   progressPercent: 0,
   message: null,
   checkedAtIso: null,
+};
+
+const DEFAULT_DIAGNOSTICS: DiagnosticsState = {
+  hasUnacknowledgedCrash: false,
+  lastCrashSummary: null,
+  lastCrashIso: null,
+  lastCrashVersion: null,
+  updatedFromVersion: null,
+  nonFatalCount: 0,
+  recentErrors: [],
+  reportText: 'Aegis Browser Diagnostics\nStatus: Clean (no crashes recorded).',
 };
 
 export const DEFAULT_SETTINGS: BrowserSettings = {
@@ -199,6 +223,7 @@ function normalizeBrowserState(raw: BrowserState): BrowserState {
     findState: raw.findState ?? null,
     pendingPermission: raw.pendingPermission ?? null,
     appUpdate: raw.appUpdate ?? { ...DEFAULT_UPDATE_STATE },
+    diagnostics: raw.diagnostics ?? { ...DEFAULT_DIAGNOSTICS },
   };
 }
 
@@ -555,6 +580,45 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   retryPendingInstall(): void {
     this.host.retryPendingInstall?.();
   }
+
+  dismissCrashAlert(): void {
+    if ('dismissCrashAlert' in this.host && typeof this.host.dismissCrashAlert === 'function') {
+      this.host.dismissCrashAlert();
+    }
+  }
+
+  clearDiagnostics(): void {
+    if ('clearDiagnostics' in this.host && typeof this.host.clearDiagnostics === 'function') {
+      this.host.clearDiagnostics();
+    }
+  }
+
+  acknowledgeUpdateToast(): void {
+    if (
+      'acknowledgeUpdateToast' in this.host &&
+      typeof this.host.acknowledgeUpdateToast === 'function'
+    ) {
+      this.host.acknowledgeUpdateToast();
+    }
+  }
+
+  reportUiError(source: string, message: string): void {
+    if ('reportUiError' in this.host && typeof this.host.reportUiError === 'function') {
+      this.host.reportUiError(source, message);
+    }
+  }
+
+  sendCrashEmail(): void {
+    if ('sendCrashEmail' in this.host && typeof this.host.sendCrashEmail === 'function') {
+      this.host.sendCrashEmail();
+    }
+  }
+
+  openCrashIssueTab(): void {
+    if ('openCrashIssueTab' in this.host && typeof this.host.openCrashIssueTab === 'function') {
+      this.host.openCrashIssueTab();
+    }
+  }
 }
 
 class StandalonePreviewBridge implements BrowserBridge {
@@ -611,6 +675,7 @@ class StandalonePreviewBridge implements BrowserBridge {
         recentEvents: [],
       },
       appUpdate: { ...DEFAULT_UPDATE_STATE },
+      diagnostics: { ...DEFAULT_DIAGNOSTICS },
     };
 
     void this.initFilters();
@@ -1213,6 +1278,71 @@ class StandalonePreviewBridge implements BrowserBridge {
   }
 
   retryPendingInstall(): void {}
+
+  dismissCrashAlert(): void {
+    const cur = this.state.diagnostics ?? DEFAULT_DIAGNOSTICS;
+    this.state = {
+      ...this.state,
+      diagnostics: { ...cur, hasUnacknowledgedCrash: false },
+    };
+    this.emit();
+  }
+
+  clearDiagnostics(): void {
+    this.state = {
+      ...this.state,
+      diagnostics: { ...DEFAULT_DIAGNOSTICS },
+    };
+    this.emit();
+  }
+
+  acknowledgeUpdateToast(): void {
+    const cur = this.state.diagnostics ?? DEFAULT_DIAGNOSTICS;
+    this.state = {
+      ...this.state,
+      diagnostics: { ...cur, updatedFromVersion: null },
+    };
+    this.emit();
+  }
+
+  reportUiError(source: string, message: string): void {
+    const cur = this.state.diagnostics ?? DEFAULT_DIAGNOSTICS;
+    const recentErrors = [
+      { source, message, timestampIso: new Date().toISOString() },
+      ...cur.recentErrors,
+    ].slice(0, 8);
+    this.state = {
+      ...this.state,
+      diagnostics: {
+        ...cur,
+        nonFatalCount: recentErrors.length,
+        recentErrors,
+      },
+    };
+    this.emit();
+  }
+
+  sendCrashEmail(): void {
+    const body = encodeURIComponent(
+      this.state.diagnostics?.reportText ?? DEFAULT_DIAGNOSTICS.reportText
+    );
+    window.open(
+      `mailto:harsh.tripathi.cs@gmail.com?subject=${encodeURIComponent('Aegis Browser Diagnostics Report')}&body=${body}`,
+      '_blank'
+    );
+  }
+
+  openCrashIssueTab(): void {
+    const repo = this.state.appUpdate.githubRepo || 'itripathiharsh/Aegis-Browser';
+    const body = encodeURIComponent(
+      this.state.diagnostics?.reportText ?? DEFAULT_DIAGNOSTICS.reportText
+    );
+    window.open(
+      `https://github.com/${repo}/issues/new?title=${encodeURIComponent('[Bug] Issue report')}&body=${body}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  }
 }
 
 let singletonBridge: BrowserBridge | null = null;

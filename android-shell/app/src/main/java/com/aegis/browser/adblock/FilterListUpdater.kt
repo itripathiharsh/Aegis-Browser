@@ -1,6 +1,7 @@
 package com.aegis.browser.adblock
 
 import android.content.Context
+import com.aegis.browser.diagnostics.CrashReporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -96,6 +97,13 @@ class FilterListUpdater(
                     .putString("src_synced_${source.id}", nowIso)
                     .putInt("src_count_${source.id}", ruleCount)
                     .apply()
+            }.onFailure { err ->
+                CrashReporter.recordNonFatal(
+                    context = context,
+                    source = "FilterSync",
+                    message = "${source.id}: ${err.message ?: "Sync failed"}",
+                    throwable = err
+                )
             }.isSuccess
 
             if (ok) synced++ else failed++

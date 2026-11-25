@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.webkit.JavascriptInterface
 import com.aegis.browser.adblock.AdBlockEngine
 import com.aegis.browser.adblock.FilterListUpdater
@@ -15,6 +16,7 @@ import com.aegis.browser.browser.ContextHitPayload
 import com.aegis.browser.browser.DownloadsRepository
 import com.aegis.browser.browser.FindMatchState
 import com.aegis.browser.browser.TabManager
+import com.aegis.browser.diagnostics.CrashReporter
 import com.aegis.browser.updater.AppUpdater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -49,7 +51,8 @@ class NativeBridge(
     private val onPushStateToUi: () -> Unit,
     private val onFilterSyncCompleted: (String) -> Unit,
     private val onThemeChanged: (String) -> Unit = {},
-    private val onRespondSitePermission: (id: String, allow: Boolean) -> Unit = { _, _ -> }
+    private val onRespondSitePermission: (id: String, allow: Boolean) -> Unit = { _, _ -> },
+    private val onStartUpdateRequested: (() -> Unit)? = null
 ) {
     @Volatile
     private var pendingContextMenu: ContextHitPayload? = null
@@ -447,7 +450,9 @@ class NativeBridge(
 
     @JavascriptInterface
     fun downloadAndInstallUpdate() {
-        runOnUi { appUpdater.startDownloadAndInstall() }
+        runOnUi {
+            onStartUpdateRequested?.invoke() ?: appUpdater.startDownloadAndInstall()
+        }
     }
 
     @JavascriptInterface
@@ -463,6 +468,60 @@ class NativeBridge(
     @JavascriptInterface
     fun retryPendingInstall() {
         runOnUi { appUpdater.openDownloadedUpdate() }
+    }
+
+    @JavascriptInterface
+    fun dismissCrashAlert() {
+        val ctx = context ?: return
+        CrashReporter.dismissCrashAlert(ctx)
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun clearDiagnostics() {
+        val ctx = context ?: return
+        CrashReporter.clearDiagnostics(ctx)
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun acknowledgeUpdateToast() {
+        CrashReporter.clearUpdatedFromVersion()
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun reportUiError(source: String, message: String) {
+        val ctx = context ?: return
+        CrashReporter.recordNonFatal(ctx, source, message)
+        runOnUi { onPushStateToUi() }
+    }
+
+    @JavascriptInterface
+    fun sendCrashEmail() {
+        val ctx = context ?: return
+        val report = CrashReporter.getSummary(ctx).reportText
+        copyText(report)
+        val subject = "Aegis Browser v${com.aegis.browser.BuildConfig.VERSION_NAME} Diagnostics Report"
+        val mailIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_EMAIL, arrayOf("harsh.tripathi.cs@gmail.com"))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, report)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { ctx.startActivity(mailIntent) }
+    }
+
+    @JavascriptInterface
+    fun openCrashIssueTab() {
+        val ctx = context ?: return
+        val summary = CrashReporter.getSummary(ctx)
+        val repo = com.aegis.browser.BuildConfig.GITHUB_REPO.ifBlank { "itripathiharsh/Aegis-Browser" }
+        val title = Uri.encode("[Bug] v${com.aegis.browser.BuildConfig.VERSION_NAME}: ${summary.lastCrashSummary ?: "Issue report"}")
+        val body = Uri.encode(summary.reportText.take(1800))
+        val url = "https://github.com/$repo/issues/new?title=$title&body=$body"
+        runOnUi { tabManager.createTab(url, makeActive = true) }
     }
 
     fun buildStateJson(): JSONObject {
@@ -597,6 +656,7 @@ class NativeBridge(
             put("filterSources", sourcesArr)
             put("telemetry", telemetryObj)
             put("appUpdate", appUpdater.getState().toJson())
+            put("diagnostics", context?.let { CrashReporter.getSummary(it).toJson() } ?: JSONObject.NULL)
         }
     }
 }

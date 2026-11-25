@@ -243,12 +243,17 @@ class AppUpdater(
                                     downloadedBytes = if (snapshot.totalBytes > 0) snapshot.totalBytes else assetSizeBytes,
                                     assetSizeBytes = if (snapshot.totalBytes > 0) snapshot.totalBytes else assetSizeBytes,
                                     progressPercent = 100,
-                                    message = "Downloaded $safeFileName to Downloads. Tap the download notification or Open Downloads to install."
+                                    message = "Saved as $safeFileName in Downloads."
                                 )
                             }
                             break
                         }
                         DownloadManager.STATUS_FAILED -> {
+                            com.aegis.browser.diagnostics.CrashReporter.recordNonFatal(
+                                context = context,
+                                source = "AppUpdater",
+                                message = "APK download failed (DownloadManager reason ${snapshot.reason})"
+                            )
                             updateState {
                                 copy(
                                     status = "error",
@@ -395,6 +400,13 @@ class AppUpdater(
         } finally {
             conn.disconnect()
         }
+    }.onFailure { err ->
+        com.aegis.browser.diagnostics.CrashReporter.recordNonFatal(
+            context = context,
+            source = "AppUpdater",
+            message = "Release check failed: ${err.message ?: "network error"}",
+            throwable = err
+        )
     }
 
     private inline fun updateState(transform: AppUpdateState.() -> AppUpdateState) {

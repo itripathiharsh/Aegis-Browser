@@ -16,13 +16,13 @@ val aegisGithubRepo = providers.gradleProperty("aegisGithubRepo")
 
 val aegisVersionName = providers.gradleProperty("aegisVersionName")
     .orElse(providers.environmentVariable("AEGIS_VERSION_NAME"))
-    .orElse("1.0.6")
+    .orElse("1.0.7")
     .get()
 
 val aegisVersionCode = providers.gradleProperty("aegisVersionCode")
     .orElse(providers.environmentVariable("AEGIS_VERSION_CODE"))
-    .map { it.toIntOrNull() ?: 1000006 }
-    .orElse(1000006)
+    .map { it.toIntOrNull() ?: 1000007 }
+    .orElse(1000007)
     .get()
 
 android {

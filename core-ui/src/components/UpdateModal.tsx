@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { AppUpdateState } from '../adblock/types';
+import { parseReleaseNotes } from '../utils/releaseNotes';
 import { formatBytes } from '../utils/semver';
 import { ShieldIcon } from './Icons';
 
@@ -24,9 +25,15 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     primaryBtnRef.current?.focus();
   }, []);
 
+  const sections = useMemo(
+    () => parseReleaseNotes(update.changelog),
+    [update.changelog]
+  );
+
   const isDownloading = update.status === 'downloading';
   const isReady = update.status === 'ready_to_install';
   const isAwaitingPerm = update.status === 'awaiting_permission';
+  const fileLabel = update.assetName || `AegisBrowser-${update.latestVersion ?? 'latest'}.apk`;
 
   return (
     <div
@@ -41,7 +48,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
       <div className="update-modal">
         <div className="drawer-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ color: 'var(--color-action)' }}>
+            <span style={{ color: 'var(--accent)' }}>
               <ShieldIcon size={24} />
             </span>
             <div>
@@ -70,16 +77,22 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         </div>
 
         <div className="changelog-box" tabIndex={0} aria-label="Release notes">
-          {update.changelog ||
-            'Includes latest network ad-blocking rules, stability improvements, and playback fixes.'}
+          {sections.map((section) => (
+            <div key={section.title} className="changelog-section">
+              <div className="changelog-heading">{section.title}</div>
+              <ul className="changelog-list">
+                {section.items.map((item, idx) => (
+                  <li key={`${section.title}-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
         {isDownloading && (
           <div className="panel-card" aria-live="polite">
             <div className="section-head">
-              <span className="row-title">
-                Downloading {update.assetName || 'update.apk'}...
-              </span>
+              <span className="row-title">Downloading {fileLabel}...</span>
               <span className="shields-count">{update.progressPercent}%</span>
             </div>
             <div
@@ -103,22 +116,38 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
           </div>
         )}
 
-        {update.message &&
-          (update.status === 'error' || isAwaitingPerm || isReady) && (
-            <div
-              className="status-banner"
-              data-tone={
-                update.status === 'error'
-                  ? 'blocked'
-                  : isReady
-                    ? 'allowed'
-                    : undefined
-              }
-              role="alert"
-            >
-              {update.message}
+        {isReady && (
+          <div className="panel-card update-install-guide" aria-live="polite">
+            <div className="row-title" style={{ marginBottom: '0.35rem' }}>
+              Ready to Install
             </div>
-          )}
+            <div className="update-file-pill" title={fileLabel}>
+              {fileLabel}
+            </div>
+            <ol className="install-steps-list">
+              <li>
+                Tap <strong>Open Downloads</strong> below (or tap Android&apos;s{' '}
+                <em>Download complete</em> notification).
+              </li>
+              <li>
+                Select <strong>{fileLabel}</strong> and confirm <strong>Update</strong>.
+              </li>
+              <li>
+                Tap the <strong>&ldquo;Aegis Browser updated&rdquo;</strong> banner when done to jump right back into your tabs.
+              </li>
+            </ol>
+          </div>
+        )}
+
+        {update.message && (update.status === 'error' || isAwaitingPerm) && (
+          <div
+            className="status-banner"
+            data-tone={update.status === 'error' ? 'blocked' : undefined}
+            role="alert"
+          >
+            {update.message}
+          </div>
+        )}
 
         <div className="modal-actions">
           {isDownloading ? (
