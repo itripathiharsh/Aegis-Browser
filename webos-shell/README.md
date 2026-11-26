@@ -1,15 +1,34 @@
-# Phase 2: LG webOS `.ipk` Packaging Target
+# LG webOS TV Shell (`io.github.itripathiharsh.nivrok`)
 
-This directory prepares Nivrok for LG webOS (`WebOS-Chromium` + `@webosose/ares-cli`) without modifying `core-ui/`.
+Nivrok packages both the built React/TypeScript browser shell (`core-ui/dist`) and a bundled Node.js Luna loopback proxy service (`webos-shell/service/` -> `io.github.itripathiharsh.nivrok.service`) into an installable LG webOS `.ipk`.
 
-## Integration Contract
+## Architecture on LG webOS TV
 
-- `core-ui/src/bridge/webosAdapter.ts` already implements `WebOSNativeHost` and LG Magic Remote Back key handling (`keyCode 461` / `GoBack`).
-- `core-ui/src/adblock/filterEngine.ts` + `updater.ts` provide full EasyList / EasyPrivacy / uBlock rule parsing and GitHub mirror syncing directly in TypeScript for webOS service/WebView interception.
-- `core-ui/src/hooks/useDpadNavigation.ts` provides full 5-way TV remote directional navigation (`ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight`/`Enter`/`Escape`).
+1. **Web App (`webos-shell/appinfo.json` + `core-ui/dist/`)**:
+   - Launches on LG TV with D-Pad / Magic Remote navigation, Dark & Light themes, Search Engine switcher, Bookmarks, History, Tabs, Tab Groups, Incognito Tabs, and persisted settings (`localStorage`).
+   - Detects `PalmSystem` / `PalmServiceBridge` / `webOS` automatically and starts the bundled background proxy service over Luna (`luna://io.github.itripathiharsh.nivrok.service/startProxy`).
+2. **Bundled Ad-Block Loopback Proxy Service (`webos-shell/service/`)**:
+   - Pure Node.js HTTP/HTTPS loopback server on `127.0.0.1` (`dependencies: {}`) compatible with webOS TV's built-in Node runtime.
+   - Evaluates outbound URLs against the bundled EasyList, EasyPrivacy, uBlock Ads, and Cosmetic rule lists (`shared-filters/*.txt`).
+   - Strips `X-Frame-Options` and `Content-Security-Policy` frame-ancestors so sites render cleanly inside Nivrok's TV viewport, injects cosmetic ad-hiding CSS + `window.open` popup guards, and streams media with `Range` support.
 
-## Phase 2 Packaging Flow (After Phase 1 Android Verification)
+## Building `.ipk` Locally (Strict `F:` drive on Windows)
 
-1. Build `core-ui`: `npm run build` (with `core-ui/public/filters` synced from `shared-filters/`).
-2. Copy `core-ui/dist/*` alongside `webos-shell/appinfo.json` and launcher icons into `webos-shell/dist/`.
-3. Package using open-source webOS CLI (`ares-package webos-shell/dist`) inside GitHub Actions `ubuntu-latest` to output `io.github.itripathiharsh.nivrok_1.0.9_all.ipk`.
+```powershell
+$env:TEMP='F:\temp'; $env:TMP='F:\temp'
+node .\scripts\build-webos-ipk.mjs
+```
+
+Outputs:
+- `webos-shell/dist/io.github.itripathiharsh.nivrok_<version>_all.ipk`
+- `webos-shell/dist/Nivrok-v<version>.ipk`
+
+## Installing on Your LG TV (Developer Mode)
+
+1. Open **Developer Mode** on your LG TV (installed from LG Content Store), enable **Dev Mode Status**, **Key Server**, and note your TV's IP address + Passphrase.
+2. Register your TV once from PC using `@webos-tools/cli`:
+   - `F:\npm-global\ares-setup-device.cmd` (or add device via CLI)
+   - `F:\npm-global\ares-novacom.cmd --device lgtv --getkey` (enter the 6-char passphrase shown on TV)
+3. Install and launch Nivrok:
+   - `F:\npm-global\ares-install.cmd --device lgtv .\webos-shell\dist\io.github.itripathiharsh.nivrok_1.0.10_all.ipk`
+   - `F:\npm-global\ares-launch.cmd --device lgtv io.github.itripathiharsh.nivrok`

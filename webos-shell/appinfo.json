@@ -1,6 +1,6 @@
 {
   "id": "io.github.itripathiharsh.nivrok",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "vendor": "Nivrok Open Source",
   "type": "web",
   "main": "index.html",
@@ -11,6 +11,7 @@
   "resolution": "1920x1080",
   "supportsAudioGuidance": true,
   "disableBackHistoryAPI": true,
+  "requiredACG": [],
   "requiredPermissions": [
     "time.query",
     "network.operation"

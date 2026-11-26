@@ -1,0 +1,10 @@
+{
+  "id": "io.github.itripathiharsh.nivrok.service",
+  "description": "Nivrok Ad-Blocking Loopback Proxy Service for LG webOS TV",
+  "services": [
+    {
+      "name": "io.github.itripathiharsh.nivrok.service",
+      "description": "Nivrok Loopback Ad-Blocking and Frame Proxy"
+    }
+  ]
+}

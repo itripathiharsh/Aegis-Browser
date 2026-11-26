@@ -1,6 +1,7 @@
 import { FilterEngine, extractHost } from '../adblock/filterEngine';
 import type {
   AppUpdateState,
+  BlockCategory,
   BlockDecision,
   BlockedEvent,
   BookmarkItem,
@@ -23,7 +24,14 @@ import {
 import { NIVROK_APP_VERSION, NIVROK_GITHUB_REPO } from '../config/updaterConfig';
 import { isNewerVersion, pickApkAsset, type GithubReleaseAsset } from '../utils/semver';
 import { resolveOmniboxInput } from '../utils/urlResolver';
-import { isWebOSRuntime, type WebOSNativeHost } from './webosAdapter';
+import {
+  fetchWebOSProxyStats,
+  isWebOSRuntime,
+  reportWebOSProxyBlocked,
+  startWebOSProxyService,
+  syncWebOSProxyShields,
+  type WebOSNativeHost,
+} from './webosAdapter';
 
 interface AndroidNativeHost extends WebOSNativeHost {
   setOverlayExpanded(expanded: boolean, barHeightPx: number): void;
@@ -144,6 +152,9 @@ export interface BrowserBridge {
   reportUiError(source: string, message: string): void;
   sendCrashEmail(): void;
   openCrashIssueTab(): void;
+  notifyWebOSPageMeta?(tabId: string, url: string, title?: string): void;
+  recordWebOSBlocked?(url: string, pageUrl: string, category: BlockCategory): void;
+  retryWebOSProxy?(): void;
 }
 
 const DEFAULT_SHIELDS: ShieldsConfig = {
@@ -622,6 +633,45 @@ class NativeAndroidOrWebOSBridge implements BrowserBridge {
   }
 }
 
+const WEB_STORAGE_KEYS = {
+  bookmarks: 'nivrok_web_bookmarks_v1',
+  history: 'nivrok_web_history_v1',
+  recs: 'nivrok_web_recs_v1',
+  settings: 'nivrok_web_settings_v1',
+  shields: 'nivrok_web_shields_v1',
+  tabs: 'nivrok_web_tabs_v1',
+};
+
+function safeReadJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeWriteJson(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota or SSR errors
+  }
+}
+
+function isExcludedRecommendationHost(cleanHost: string): boolean {
+  return (
+    cleanHost === 'duckduckgo.com' ||
+    cleanHost === 'search.brave.com' ||
+    cleanHost === 'brave.com' ||
+    cleanHost.startsWith('google.') ||
+    cleanHost === 'startpage.com' ||
+    cleanHost === 'bing.com' ||
+    /^(new\d+|ad\d*|ads\d*|pop\d*|redir\d*|clk\d*|trk\d*)\./.test(cleanHost)
+  );
+}
+
 class StandalonePreviewBridge implements BrowserBridge {
   readonly isNativeAndroid = false;
   private filterEngine = new FilterEngine();
@@ -632,10 +682,31 @@ class StandalonePreviewBridge implements BrowserBridge {
   private recMap = new Map<string, RecommendedSite>();
   private downloads: DownloadRecord[] = [];
   private closedStack: TabInfo[] = [];
+  private navStacks = new Map<string, { stack: string[]; index: number }>();
+  private webosStatsTimer: number | null = null;
   private state: BrowserState;
 
   constructor() {
-    const initialTab: TabInfo = {
+    const webos = isWebOSRuntime();
+    const savedSettings = {
+      ...DEFAULT_SETTINGS,
+      ...safeReadJson<Partial<BrowserSettings>>(WEB_STORAGE_KEYS.settings, {}),
+    };
+    const savedShields: ShieldsConfig = {
+      ...DEFAULT_SHIELDS,
+      ...safeReadJson<Partial<ShieldsConfig>>(WEB_STORAGE_KEYS.shields, {}),
+    };
+    const savedBookmarks = safeReadJson<BookmarkItem[]>(
+      WEB_STORAGE_KEYS.bookmarks,
+      DEFAULT_PREVIEW_BOOKMARKS
+    );
+    this.history = safeReadJson<HistoryEntry[]>(WEB_STORAGE_KEYS.history, []).slice(0, 200);
+    const savedRecs = safeReadJson<RecommendedSite[]>(WEB_STORAGE_KEYS.recs, []);
+    for (const r of savedRecs) {
+      if (r && r.host) this.recMap.set(r.host, r);
+    }
+
+    const defaultTab: TabInfo = {
       id: 'tab-1',
       title: 'Nivrok Start',
       url: 'nivrok://home',
@@ -643,29 +714,63 @@ class StandalonePreviewBridge implements BrowserBridge {
       progress: 100,
       canGoBack: false,
       canGoForward: false,
-      desktopMode: false,
+      desktopMode: savedSettings.defaultDesktopMode,
       incognito: false,
       readerMode: false,
       groupId: null,
       groupTitle: null,
       groupColor: null,
       blockedCount: 0,
+      navNonce: 1,
+      commitUrl: 'nivrok://home',
     };
 
+    let restoredTabs: TabInfo[] = [defaultTab];
+    let restoredActiveId = defaultTab.id;
+    if (savedSettings.restoreTabsOnStart) {
+      const savedTabDump = safeReadJson<{ activeTabId?: string; tabs?: TabInfo[] } | null>(
+        WEB_STORAGE_KEYS.tabs,
+        null
+      );
+      if (savedTabDump?.tabs && savedTabDump.tabs.length > 0) {
+        const cleanTabs = savedTabDump.tabs
+          .filter((t) => t && !t.incognito)
+          .map((t) => ({
+            ...t,
+            isLoading: false,
+            progress: 100,
+            canGoBack: false,
+            canGoForward: false,
+            navNonce: 1,
+            commitUrl: t.url || 'nivrok://home',
+          }));
+        if (cleanTabs.length > 0) {
+          restoredTabs = cleanTabs;
+          restoredActiveId = cleanTabs.some((t) => t.id === savedTabDump.activeTabId)
+            ? (savedTabDump.activeTabId as string)
+            : cleanTabs[0].id;
+        }
+      }
+    }
+
+    for (const t of restoredTabs) {
+      this.navStacks.set(t.id, { stack: [t.url || 'nivrok://home'], index: 0 });
+    }
+
     this.state = {
-      platform: isWebOSRuntime() ? 'webos' : 'web',
-      searchEngine: DEFAULT_SETTINGS.searchEngine,
-      settings: { ...DEFAULT_SETTINGS },
-      activeTabId: initialTab.id,
-      tabs: [initialTab],
-      bookmarks: [...DEFAULT_PREVIEW_BOOKMARKS],
+      platform: webos ? 'webos' : 'web',
+      searchEngine: savedSettings.searchEngine,
+      settings: savedSettings,
+      activeTabId: restoredActiveId,
+      tabs: restoredTabs,
+      bookmarks: savedBookmarks.length > 0 ? savedBookmarks : [...DEFAULT_PREVIEW_BOOKMARKS],
       canReopenClosedTab: false,
       recommendations: [],
       downloadsSummary: { activeCount: 0, totalCount: 0 },
       pendingContextMenu: null,
       findState: null,
       pendingPermission: null,
-      shields: { ...DEFAULT_SHIELDS },
+      shields: savedShields,
       filterStats: this.filterEngine.getStats(),
       filterSources: [],
       telemetry: {
@@ -677,9 +782,183 @@ class StandalonePreviewBridge implements BrowserBridge {
       },
       appUpdate: { ...DEFAULT_UPDATE_STATE },
       diagnostics: { ...DEFAULT_DIAGNOSTICS },
+      webosProxyUrl: null,
+      webosProxyError: null,
     };
+    this.state.recommendations = this.buildPreviewRecommendations();
 
     void this.initFilters();
+    if (webos) {
+      void this.initWebOSProxy();
+    }
+  }
+
+  private persistLocal(): void {
+    if (typeof window === 'undefined') return;
+    safeWriteJson(WEB_STORAGE_KEYS.bookmarks, this.state.bookmarks ?? []);
+    safeWriteJson(WEB_STORAGE_KEYS.history, this.history.slice(0, 200));
+    safeWriteJson(WEB_STORAGE_KEYS.recs, Array.from(this.recMap.values()).slice(0, 40));
+    safeWriteJson(WEB_STORAGE_KEYS.settings, this.state.settings ?? DEFAULT_SETTINGS);
+    safeWriteJson(WEB_STORAGE_KEYS.shields, this.state.shields);
+    const nonPrivateTabs = this.state.tabs.filter((t) => !t.incognito);
+    safeWriteJson(WEB_STORAGE_KEYS.tabs, {
+      activeTabId: this.state.activeTabId,
+      tabs: nonPrivateTabs.length > 0 ? nonPrivateTabs : [this.state.tabs[0]],
+    });
+  }
+
+  private async initWebOSProxy(): Promise<void> {
+    try {
+      const res = await startWebOSProxyService();
+      if (res && res.returnValue && res.baseUrl) {
+        this.state = {
+          ...this.state,
+          webosProxyUrl: res.baseUrl,
+          webosProxyError: null,
+          filterStats:
+            res.filterStats && res.filterStats.domainRuleCount > 0
+              ? res.filterStats
+              : this.state.filterStats,
+        };
+        this.emit();
+        void syncWebOSProxyShields(this.state.shields, res.baseUrl);
+        if (this.webosStatsTimer === null && typeof window !== 'undefined') {
+          this.webosStatsTimer = window.setInterval(() => {
+            void this.refreshWebOSStats();
+          }, 3500);
+        }
+      } else {
+        this.state = {
+          ...this.state,
+          webosProxyError: 'Loopback proxy service not reachable on Luna bus.',
+        };
+        this.emit();
+      }
+    } catch (err) {
+      this.state = {
+        ...this.state,
+        webosProxyError: err instanceof Error ? err.message : String(err),
+      };
+      this.emit();
+    }
+  }
+
+  retryWebOSProxy(): void {
+    this.state = { ...this.state, webosProxyError: null };
+    this.emit();
+    void this.initWebOSProxy();
+  }
+
+  private async refreshWebOSStats(): Promise<void> {
+    const res = await fetchWebOSProxyStats(this.state.webosProxyUrl);
+    if (!res || !res.telemetry) return;
+    if (
+      res.telemetry.totalBlocked === this.state.telemetry.totalBlocked &&
+      res.telemetry.popupsBlocked === this.state.telemetry.popupsBlocked
+    ) {
+      return;
+    }
+    this.state = {
+      ...this.state,
+      telemetry: res.telemetry,
+      filterStats: res.filterStats ?? this.state.filterStats,
+      tabs: this.state.tabs.map((t) =>
+        t.id === this.state.activeTabId
+          ? { ...t, blockedCount: res.telemetry!.totalBlocked }
+          : t
+      ),
+    };
+    this.emit();
+  }
+
+  notifyWebOSPageMeta(tabId: string, pageUrl: string, title?: string): void {
+    if (!pageUrl || !/^https?:\/\//i.test(pageUrl)) return;
+    const host = extractHost(pageUrl) ?? pageUrl;
+    const target = this.state.tabs.find((t) => t.id === tabId);
+    if (!target) return;
+
+    let stackEntry = this.navStacks.get(tabId);
+    if (!stackEntry) {
+      stackEntry = { stack: [target.url], index: 0 };
+      this.navStacks.set(tabId, stackEntry);
+    }
+    if (stackEntry.stack[stackEntry.index] !== pageUrl) {
+      stackEntry.stack = stackEntry.stack.slice(0, stackEntry.index + 1);
+      stackEntry.stack.push(pageUrl);
+      stackEntry.index = stackEntry.stack.length - 1;
+    }
+
+    if (!target.incognito) {
+      this.recordVisitHistory(pageUrl, title || host.replace(/^www\./, ''), host);
+    }
+
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              url: pageUrl,
+              title: title?.trim() || host,
+              canGoBack: stackEntry!.index > 0,
+              canGoForward: stackEntry!.index < stackEntry!.stack.length - 1,
+            }
+          : t
+      ),
+      recommendations: this.buildPreviewRecommendations(),
+    };
+    this.persistLocal();
+    this.emit();
+  }
+
+  recordWebOSBlocked(url: string, pageUrl: string, category: BlockCategory): void {
+    const nextTelemetry = { ...this.state.telemetry };
+    nextTelemetry.totalBlocked += 1;
+    if (category === 'trackers') nextTelemetry.trackersBlocked += 1;
+    else if (category === 'popups') nextTelemetry.popupsBlocked += 1;
+    else nextTelemetry.adsBlocked += 1;
+    nextTelemetry.recentEvents = [
+      {
+        url,
+        host: extractHost(url) ?? url,
+        pageHost: extractHost(pageUrl) ?? '',
+        rule: 'webos-scriptlet-guard',
+        category,
+        timestampMs: Date.now(),
+      },
+      ...nextTelemetry.recentEvents,
+    ].slice(0, 30);
+
+    this.state = { ...this.state, telemetry: nextTelemetry };
+    this.emit();
+    void reportWebOSProxyBlocked(url, pageUrl, category);
+  }
+
+  private recordVisitHistory(resolved: string, title: string, host: string): void {
+    const now = Date.now();
+    if (this.state.settings?.saveHistory ?? true) {
+      this.history = [
+        {
+          id: `h-${now}-${Math.random().toString(36).slice(2, 6)}`,
+          url: resolved,
+          title,
+          host,
+          visitedAtMs: now,
+        },
+        ...this.history.filter((h, i) => !(i === 0 && h.url === resolved)),
+      ].slice(0, 200);
+    }
+    const cleanHost = host.replace(/^www\./, '').toLowerCase();
+    if (!isExcludedRecommendationHost(cleanHost)) {
+      const prev = this.recMap.get(host);
+      this.recMap.set(host, {
+        url: resolved.length <= 90 ? resolved : `https://${host}/`,
+        title: cleanHost,
+        host,
+        visits: (prev?.visits ?? 0) + 1,
+        lastVisitedMs: now,
+      });
+    }
   }
 
   private async initFilters() {
@@ -688,7 +967,10 @@ class StandalonePreviewBridge implements BrowserBridge {
     this.state = {
       ...this.state,
       filterSources: sources,
-      filterStats: this.filterEngine.getStats(),
+      filterStats:
+        this.state.filterStats.domainRuleCount > 0
+          ? this.state.filterStats
+          : this.filterEngine.getStats(),
     };
     this.emit();
   }
@@ -722,21 +1004,40 @@ class StandalonePreviewBridge implements BrowserBridge {
   navigate(tabId: string, rawInput: string, engine: SearchEngineId = 'duckduckgo'): void {
     const resolved = resolveOmniboxInput(rawInput, engine);
     const activeTarget = this.state.tabs.find((t) => t.id === tabId);
+    let stackEntry = this.navStacks.get(tabId);
+    if (!stackEntry) {
+      stackEntry = { stack: [activeTarget?.url ?? 'nivrok://home'], index: 0 };
+      this.navStacks.set(tabId, stackEntry);
+    }
+    if (stackEntry.stack[stackEntry.index] !== resolved) {
+      stackEntry.stack = stackEntry.stack.slice(0, stackEntry.index + 1);
+      stackEntry.stack.push(resolved);
+      stackEntry.index = stackEntry.stack.length - 1;
+    }
+
     const tabs = this.state.tabs.map((t) => {
       if (t.id !== tabId) return t;
       const host = extractHost(resolved);
       return {
         ...t,
         url: resolved,
-        title: resolved === 'nivrok://home' ? (t.incognito ? 'Private Tab' : 'Nivrok Start') : host ?? resolved,
-        canGoBack: resolved !== 'nivrok://home',
+        commitUrl: resolved,
+        navNonce: (t.navNonce ?? 0) + 1,
+        title:
+          resolved === 'nivrok://home'
+            ? t.incognito
+              ? 'Private Tab'
+              : 'Nivrok Start'
+            : host ?? resolved,
+        canGoBack: stackEntry!.index > 0,
+        canGoForward: false,
         isLoading: false,
         progress: 100,
       };
     });
 
     const nextTelemetry = { ...this.state.telemetry };
-    if (!resolved.startsWith('nivrok://')) {
+    if (this.state.platform === 'web' && !resolved.startsWith('nivrok://')) {
       const sampleProbes = [
         'https://securepubads.g.doubleclick.net/tag/js/gpt.js',
         'https://www.google-analytics.com/g/collect?v=2',
@@ -765,38 +1066,7 @@ class StandalonePreviewBridge implements BrowserBridge {
 
     if (!resolved.startsWith('nivrok://') && !activeTarget?.incognito) {
       const host = extractHost(resolved) ?? resolved;
-      const now = Date.now();
-      if (this.state.settings?.saveHistory ?? true) {
-        this.history = [
-          {
-            id: `h-${now}-${Math.random().toString(36).slice(2, 6)}`,
-            url: resolved,
-            title: host.replace(/^www\./, ''),
-            host,
-            visitedAtMs: now,
-          },
-          ...this.history,
-        ].slice(0, 200);
-      }
-      const cleanHost = host.replace(/^www\./, '').toLowerCase();
-      const isExcludedHost =
-        cleanHost === 'duckduckgo.com' ||
-        cleanHost === 'search.brave.com' ||
-        cleanHost === 'brave.com' ||
-        cleanHost.startsWith('google.') ||
-        cleanHost === 'startpage.com' ||
-        cleanHost === 'bing.com' ||
-        /^(new\d+|ad\d*|ads\d*|pop\d*|redir\d*|clk\d*|trk\d*)\./.test(cleanHost);
-      if (!isExcludedHost) {
-        const prev = this.recMap.get(host);
-        this.recMap.set(host, {
-          url: resolved.length <= 90 ? resolved : `https://${host}/`,
-          title: cleanHost,
-          host,
-          visits: (prev?.visits ?? 0) + 1,
-          lastVisitedMs: now,
-        });
-      }
+      this.recordVisitHistory(resolved, host.replace(/^www\./, ''), host);
     }
 
     this.state = {
@@ -809,29 +1079,94 @@ class StandalonePreviewBridge implements BrowserBridge {
       recommendations: this.buildPreviewRecommendations(),
       telemetry: nextTelemetry,
     };
+    this.persistLocal();
     this.emit();
+    if (this.state.platform === 'webos') {
+      window.setTimeout(() => void this.refreshWebOSStats(), 1200);
+    }
   }
 
   goBack(tabId: string): void {
-    this.navigate(tabId, 'nivrok://home');
+    const entry = this.navStacks.get(tabId);
+    if (!entry || entry.index <= 0) {
+      this.navigate(tabId, 'nivrok://home');
+      return;
+    }
+    entry.index -= 1;
+    const prevUrl = entry.stack[entry.index] ?? 'nivrok://home';
+    const host = extractHost(prevUrl);
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              url: prevUrl,
+              commitUrl: prevUrl,
+              navNonce: (t.navNonce ?? 0) + 1,
+              title: prevUrl === 'nivrok://home' ? 'Nivrok Start' : host ?? prevUrl,
+              canGoBack: entry.index > 0,
+              canGoForward: entry.index < entry.stack.length - 1,
+            }
+          : t
+      ),
+    };
+    this.persistLocal();
+    this.emit();
   }
 
-  goForward(_tabId: string): void {}
-  reload(_tabId: string): void {}
+  goForward(tabId: string): void {
+    const entry = this.navStacks.get(tabId);
+    if (!entry || entry.index >= entry.stack.length - 1) return;
+    entry.index += 1;
+    const nextUrl = entry.stack[entry.index] ?? 'nivrok://home';
+    const host = extractHost(nextUrl);
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              url: nextUrl,
+              commitUrl: nextUrl,
+              navNonce: (t.navNonce ?? 0) + 1,
+              title: nextUrl === 'nivrok://home' ? 'Nivrok Start' : host ?? nextUrl,
+              canGoBack: entry.index > 0,
+              canGoForward: entry.index < entry.stack.length - 1,
+            }
+          : t
+      ),
+    };
+    this.persistLocal();
+    this.emit();
+  }
+
+  reload(tabId: string): void {
+    this.state = {
+      ...this.state,
+      tabs: this.state.tabs.map((t) =>
+        t.id === tabId ? { ...t, commitUrl: t.url, navNonce: (t.navNonce ?? 0) + 1 } : t
+      ),
+    };
+    this.emit();
+  }
   stopLoading(_tabId: string): void {}
 
   createTab(url?: string): void {
     const id = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
     const targetUrl = url ?? 'nivrok://home';
+    this.navStacks.set(id, { stack: [targetUrl], index: 0 });
     const newTab: TabInfo = {
       id,
       title: targetUrl === 'nivrok://home' ? 'New Tab' : extractHost(targetUrl) ?? targetUrl,
       url: targetUrl,
+      commitUrl: targetUrl,
+      navNonce: 1,
       isLoading: false,
       progress: 100,
       canGoBack: false,
       canGoForward: false,
-      desktopMode: false,
+      desktopMode: this.state.settings?.defaultDesktopMode ?? false,
       incognito: false,
       readerMode: false,
       groupId: null,
@@ -844,21 +1179,25 @@ class StandalonePreviewBridge implements BrowserBridge {
       activeTabId: id,
       tabs: [...this.state.tabs, newTab],
     };
+    this.persistLocal();
     this.emit();
   }
 
   createIncognitoTab(url?: string): void {
     const id = `tab-inc-${Date.now().toString(36)}`;
     const targetUrl = url ?? 'nivrok://home';
+    this.navStacks.set(id, { stack: [targetUrl], index: 0 });
     const newTab: TabInfo = {
       id,
       title: targetUrl === 'nivrok://home' ? 'Private Tab' : extractHost(targetUrl) ?? targetUrl,
       url: targetUrl,
+      commitUrl: targetUrl,
+      navNonce: 1,
       isLoading: false,
       progress: 100,
       canGoBack: false,
       canGoForward: false,
-      desktopMode: false,
+      desktopMode: this.state.settings?.defaultDesktopMode ?? false,
       incognito: true,
       readerMode: false,
       groupId: null,
@@ -880,15 +1219,18 @@ class StandalonePreviewBridge implements BrowserBridge {
     const gTitle = source?.groupTitle ?? (extractHost(source?.url ?? '')?.replace(/^www\./, '') || 'Tab Group');
     const gColor = source?.groupColor ?? '#3B82F6';
     const newId = `tab-${Date.now().toString(36)}`;
+    this.navStacks.set(newId, { stack: [url], index: 0 });
     const child: TabInfo = {
       id: newId,
       title: extractHost(url) ?? url,
       url,
+      commitUrl: url,
+      navNonce: 1,
       isLoading: false,
       progress: 100,
       canGoBack: false,
       canGoForward: false,
-      desktopMode: false,
+      desktopMode: this.state.settings?.defaultDesktopMode ?? false,
       incognito: false,
       readerMode: false,
       groupId: gid,
@@ -904,6 +1246,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       tabs: [...updated, child],
       activeTabId: makeActive ? newId : this.state.activeTabId,
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -912,6 +1255,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       ...this.state,
       tabs: this.state.tabs.map((t) => (t.groupId === groupId ? { ...t, groupTitle: title } : t)),
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -922,6 +1266,7 @@ class StandalonePreviewBridge implements BrowserBridge {
         t.id === tabId ? { ...t, groupId: null, groupTitle: null, groupColor: null } : t
       ),
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -938,24 +1283,28 @@ class StandalonePreviewBridge implements BrowserBridge {
         ? this.state.activeTabId
         : remaining[0].id,
     };
+    this.persistLocal();
     this.emit();
   }
 
   reopenClosedTab(): void {
     const popped = this.closedStack.shift();
     if (!popped) return;
+    this.navStacks.set(popped.id, { stack: [popped.url], index: 0 });
     this.state = {
       ...this.state,
-      tabs: [...this.state.tabs, popped],
+      tabs: [...this.state.tabs, { ...popped, commitUrl: popped.url, navNonce: 1 }],
       activeTabId: popped.id,
       canReopenClosedTab: this.closedStack.length > 0,
     };
+    this.persistLocal();
     this.emit();
   }
 
   switchTab(tabId: string): void {
     if (!this.state.tabs.some((t) => t.id === tabId)) return;
     this.state = { ...this.state, activeTabId: tabId, findState: null };
+    this.persistLocal();
     this.emit();
   }
 
@@ -965,6 +1314,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       this.closedStack.unshift(victim);
       if (this.closedStack.length > 15) this.closedStack.pop();
     }
+    this.navStacks.delete(tabId);
     const remaining = this.state.tabs.filter((t) => t.id !== tabId);
     if (remaining.length === 0) {
       this.createTab('nivrok://home');
@@ -978,6 +1328,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       activeTabId: nextActive,
       canReopenClosedTab: this.closedStack.length > 0,
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -985,9 +1336,12 @@ class StandalonePreviewBridge implements BrowserBridge {
     this.state = {
       ...this.state,
       tabs: this.state.tabs.map((t) =>
-        t.id === tabId ? { ...t, desktopMode: desktop } : t
+        t.id === tabId
+          ? { ...t, desktopMode: desktop, commitUrl: t.url, navNonce: (t.navNonce ?? 0) + 1 }
+          : t
       ),
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -1049,6 +1403,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       ...this.state,
       bookmarks: [{ id: `bm-${Date.now()}`, title, url, tag, pinned: true }, ...cur],
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -1057,18 +1412,24 @@ class StandalonePreviewBridge implements BrowserBridge {
       ...this.state,
       bookmarks: (this.state.bookmarks ?? []).filter((b) => b.id !== id && b.url !== id),
     };
+    this.persistLocal();
     this.emit();
   }
 
   importLegacyBookmarks(items: BookmarkItem[]): void {
     if (items.length === 0) return;
     this.state = { ...this.state, bookmarks: items };
+    this.persistLocal();
     this.emit();
   }
 
   setShieldsConfig(config: ShieldsConfig): void {
     this.state = { ...this.state, shields: config };
+    this.persistLocal();
     this.emit();
+    if (this.state.platform === 'webos') {
+      void syncWebOSProxyShields(config, this.state.webosProxyUrl);
+    }
   }
 
   toggleSiteShields(host: string, enabled: boolean): void {
@@ -1108,6 +1469,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       searchEngine: engineId,
     };
     this.state = { ...this.state, searchEngine: engineId, settings: nextSettings };
+    this.persistLocal();
     this.emit();
   }
 
@@ -1121,6 +1483,7 @@ class StandalonePreviewBridge implements BrowserBridge {
       ...this.state,
       recommendations: this.buildPreviewRecommendations(),
     };
+    this.persistLocal();
     this.emit();
   }
 
@@ -1130,18 +1493,22 @@ class StandalonePreviewBridge implements BrowserBridge {
 
   deleteHistoryItem(id: string): void {
     this.history = this.history.filter((h) => h.id !== id);
+    this.persistLocal();
+    this.emit();
   }
 
   clearHistory(): void {
     this.history = [];
     this.recMap.clear();
     this.state = { ...this.state, recommendations: [] };
+    this.persistLocal();
     this.emit();
   }
 
   dismissRecommendation(host: string): void {
     this.recMap.delete(host);
     this.state = { ...this.state, recommendations: this.buildPreviewRecommendations() };
+    this.persistLocal();
     this.emit();
   }
 

@@ -20,15 +20,15 @@ val nivrokVersionName = providers.gradleProperty("nivrokVersionName")
     .orElse(providers.gradleProperty("aegisVersionName"))
     .orElse(providers.environmentVariable("NIVROK_VERSION_NAME"))
     .orElse(providers.environmentVariable("AEGIS_VERSION_NAME"))
-    .orElse("1.0.9")
+    .orElse("1.0.10")
     .get()
 
 val nivrokVersionCode = providers.gradleProperty("nivrokVersionCode")
     .orElse(providers.gradleProperty("aegisVersionCode"))
     .orElse(providers.environmentVariable("NIVROK_VERSION_CODE"))
     .orElse(providers.environmentVariable("AEGIS_VERSION_CODE"))
-    .map { it.toIntOrNull() ?: 1000009 }
-    .orElse(1000009)
+    .map { it.toIntOrNull() ?: 1000010 }
+    .orElse(1000010)
     .get()
 
 android {

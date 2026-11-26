@@ -24,6 +24,8 @@ android-shell/local.properties
 
 # Synced build assets (regenerated via scripts/sync-assets.mjs)
 android-shell/app/src/main/assets/ui/
+webos-shell/build/
+webos-shell/dist/
 
 # Temp / Logs
 *.log

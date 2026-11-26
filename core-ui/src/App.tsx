@@ -10,7 +10,7 @@ import type {
   SearchEngineId,
 } from './adblock/types';
 import { DEFAULT_SETTINGS, getBrowserBridge } from './bridge/nativeBridge';
-import { registerWebOSBackHandler } from './bridge/webosAdapter';
+import { buildWebOSProxiedUrl, registerWebOSBackHandler } from './bridge/webosAdapter';
 import { BookmarksDrawer } from './components/BookmarksDrawer';
 import { DownloadsDrawer } from './components/DownloadsDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
@@ -168,6 +168,34 @@ export const App: React.FC = () => {
 
   const activeTab =
     state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
+
+  const [directFallbackTabs, setDirectFallbackTabs] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (state.platform !== 'webos') return;
+    const onMessage = (ev: MessageEvent) => {
+      const data = ev.data as {
+        type?: string;
+        tabId?: string;
+        url?: string;
+        title?: string;
+        pageUrl?: string;
+        category?: 'ads' | 'trackers' | 'popups' | 'cosmetic';
+      } | null;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'nivrok:page-meta' && data.url) {
+        bridge.notifyWebOSPageMeta?.(data.tabId || activeTab.id, data.url, data.title);
+      } else if (data.type === 'nivrok:blocked' && data.url) {
+        bridge.recordWebOSBlocked?.(
+          data.url,
+          data.pageUrl || activeTab.url,
+          data.category ?? 'popups'
+        );
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [activeTab.id, activeTab.url, bridge, state.platform]);
 
   const isInternalPage =
     activeTab.url.startsWith('nivrok://') || activeTab.url.startsWith('aegis://');
@@ -409,7 +437,79 @@ export const App: React.FC = () => {
         />
       )}
 
-      {!isInternalPage && !bridge.isNativeAndroid && (
+      {!isInternalPage && !bridge.isNativeAndroid && state.platform === 'webos' && (
+        <main className="webos-stage" id="main">
+          {state.webosProxyUrl ? (
+            <iframe
+              key={`${activeTab.id}:${activeTab.navNonce ?? 0}:${activeTab.commitUrl ?? activeTab.url}`}
+              className="webos-viewport-frame"
+              title={activeTab.title}
+              src={buildWebOSProxiedUrl(
+                state.webosProxyUrl,
+                activeTab.commitUrl ?? activeTab.url,
+                activeTab
+              )}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              referrerPolicy="no-referrer-when-downgrade"
+              style={
+                settings.textZoom && settings.textZoom !== 100
+                  ? ({ zoom: settings.textZoom / 100 } as React.CSSProperties)
+                  : undefined
+              }
+            />
+          ) : directFallbackTabs[activeTab.id] ? (
+            <iframe
+              key={`${activeTab.id}:direct:${activeTab.navNonce ?? 0}:${activeTab.commitUrl ?? activeTab.url}`}
+              className="webos-viewport-frame"
+              title={activeTab.title}
+              src={activeTab.commitUrl ?? activeTab.url}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          ) : (
+            <div className="preview-card webos-proxy-card">
+              <h1 className="section-title">
+                {state.webosProxyError
+                  ? 'Nivrok Shield Proxy Unavailable'
+                  : 'Starting Nivrok TV Shield Engine…'}
+              </h1>
+              <p className="row-meta">{activeTab.url}</p>
+              <p className="stat-label">
+                {state.webosProxyError
+                  ? `Loopback proxy error: ${state.webosProxyError}. You can retry the ad-blocking proxy or open this site directly.`
+                  : 'Initializing the bundled webOS loopback filter proxy with 53,000+ ad, tracker, and popup rules.'}
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => bridge.retryWebOSProxy?.()}
+                >
+                  Retry Shield Proxy
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() =>
+                    setDirectFallbackTabs((prev) => ({ ...prev, [activeTab.id]: true }))
+                  }
+                >
+                  Open Directly (No Frame Bypass)
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => bridge.navigate(activeTab.id, 'nivrok://home')}
+                >
+                  Home
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      )}
+
+      {!isInternalPage && !bridge.isNativeAndroid && state.platform !== 'webos' && (
         <main className="main-stage" id="main">
           <div className="preview-card">
             <h1 className="section-title">
@@ -417,7 +517,7 @@ export const App: React.FC = () => {
             </h1>
             <p className="row-meta">{activeTab.url}</p>
             <p className="stat-label">
-              Renders inside the hardware-accelerated Android WebView with{' '}
+              Renders inside the hardware-accelerated Android WebView or LG webOS Shield Proxy with{' '}
               {(
                 state.filterStats.domainRuleCount +
                 state.filterStats.patternRuleCount

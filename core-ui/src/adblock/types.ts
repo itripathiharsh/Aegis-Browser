@@ -89,6 +89,8 @@ export interface TabInfo {
   groupTitle?: string | null;
   groupColor?: string | null;
   blockedCount: number;
+  navNonce?: number;
+  commitUrl?: string;
 }
 
 export interface BookmarkItem {
@@ -212,6 +214,8 @@ export interface BrowserState {
   filterSources: FilterSource[];
   telemetry: TelemetrySnapshot;
   appUpdate: AppUpdateState;
+  webosProxyUrl?: string | null;
+  webosProxyError?: string | null;
 }
 
 export interface BlockDecision {

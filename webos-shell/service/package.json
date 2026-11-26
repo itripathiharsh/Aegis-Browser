@@ -1,0 +1,7 @@
+{
+  "name": "io.github.itripathiharsh.nivrok.service",
+  "version": "1.0.10",
+  "description": "Nivrok Ad-Blocking Loopback Proxy Service for LG webOS TV",
+  "main": "service.js",
+  "dependencies": {}
+}

@@ -1334,7 +1334,25 @@
   box-shadow: var(--shadow-lg);
 }
 
-/* Web Preview Card */
+/* Web Preview Card & webOS Live Viewport */
+.webos-stage {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: calc(100dvh - 54px);
+  background: var(--bg-canvas);
+}
+
+.webos-viewport-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  height: calc(100dvh - 54px);
+  border: 0;
+  display: block;
+  background: #ffffff;
+}
+
 .preview-card {
   width: min(100%, 44rem);
   margin: var(--space-4) auto 0;
